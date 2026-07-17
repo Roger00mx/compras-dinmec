@@ -30,8 +30,13 @@
   <!-- Cabecera del expediente -->
   <div class="cabecera">
     <div class="campos">
-      <div class="campo"><label>Proyecto</label><input id="c-proyecto"></div>
-      <div class="campo"><label>Cliente</label><input id="c-cliente"></div>
+      <div class="campo"><label>Destino de la compra</label>
+        <select id="c-destino" onchange="alternarDestino()">
+          <option value="proyecto">Para proyecto / cliente</option>
+          <option value="INTERNA DINMEC">INTERNA DINMEC (uso interno)</option>
+        </select></div>
+      <div class="campo" id="caja-proyecto"><label>Proyecto</label><input id="c-proyecto"></div>
+      <div class="campo" id="caja-cliente"><label>Cliente</label><input id="c-cliente"></div>
       <div class="campo"><label>Clase de compra</label><select id="c-clase"><option>Directa</option><option>Indirecta</option></select></div>
     </div>
     <div style="display:flex;justify-content:flex-end;margin-top:12px;gap:10px">
@@ -82,15 +87,24 @@ async function recargarSuave(){
 
 function pintarCabecera(){
   const c=DATA.compra, r=DATA.resumen;
-  document.getElementById("titulo").textContent="REQ-"+c.folio;
+  document.getElementById("titulo").textContent="REQ-"+c.folio+(c.destino==="INTERNA DINMEC"?" · INTERNA":"");
   const chip=document.getElementById("chipEstado");
   chip.textContent=r.etiqueta; chip.className="chip "+r.color;
+  document.getElementById("c-destino").value=c.destino==="INTERNA DINMEC"?"INTERNA DINMEC":"proyecto";
   document.getElementById("c-proyecto").value=c.proyecto||"";
   document.getElementById("c-cliente").value=c.cliente||"";
   document.getElementById("c-clase").value=c.clase||"Directa";
+  alternarDestino();
+}
+function alternarDestino(){
+  const interna=document.getElementById("c-destino").value==="INTERNA DINMEC";
+  document.getElementById("caja-proyecto").style.display=interna?"none":"";
+  document.getElementById("caja-cliente").style.display=interna?"none":"";
 }
 async function guardarCabecera(){
-  await api.put("/api/compra/"+ID,{proyecto:gv("c-proyecto"),cliente:gv("c-cliente"),clase:gv("c-clase")});
+  const interna=gv("c-destino")==="INTERNA DINMEC";
+  await api.put("/api/compra/"+ID,{destino:gv("c-destino"),proyecto:interna?"":gv("c-proyecto"),cliente:interna?"":gv("c-cliente"),clase:gv("c-clase")});
+  DATA.compra.destino=gv("c-destino");
   aviso("Datos guardados ✓");
 }
 async function eliminarExpediente(){
@@ -777,4 +791,3 @@ inicio();
 </script>
 </body>
 </html>
-                                                                                                                     

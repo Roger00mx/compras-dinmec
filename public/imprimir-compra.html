@@ -83,7 +83,9 @@ async function inicio(){
     const d=rq.datos;
     html+=`<div class="hoja">${cab("REQUISICIÓN DE COMPRA", d.version||CAT.versiones.requisicion)}
       <div class="kv">
-        <div><b>Proyecto</b>${e(c.proyecto||"—")}</div><div><b>Cliente</b>${e(c.cliente||"—")}</div>
+        ${c.destino==="INTERNA DINMEC"
+          ?`<div><b>Destino</b>INTERNA DINMEC (uso interno)</div>`
+          :`<div><b>Proyecto</b>${e(c.proyecto||"—")}</div><div><b>Cliente</b>${e(c.cliente||"—")}</div>`}
         <div><b>Clase</b>${e(c.clase||"")}</div><div><b>Tipo de compra</b>${e(d.tipo_compra||"—")}</div>
         <div><b>Fecha de solicitud</b>${fechaCorta(d.fecha_solicitud)||"—"}</div><div><b>Fecha requerida</b>${fechaCorta(d.fecha_requerida)||"—"}</div>
       </div>

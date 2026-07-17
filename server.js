@@ -72,6 +72,8 @@ db.exec(`
     usuario_id TEXT, creado TEXT, expira TEXT
   );
 `);
+// Migraciones (columnas agregadas después de la versión 1.0)
+try { db.exec("ALTER TABLE compras ADD COLUMN destino TEXT"); } catch (_) {}
 
 // ---------- Utilidades ----------
 const ahora = () => new Date().toISOString();
@@ -356,8 +358,8 @@ const servidor = http.createServer(async (req, res) => {
     if (ruta === "/api/compras" && req.method === "POST") {
       const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
       const id = uid(), folio = nuevoFolio();
-      db.prepare("INSERT INTO compras (id,folio,proyecto,cliente,clase,creado,creado_por,actualizado,actualizado_por) VALUES (?,?,?,?,?,?,?,?,?)")
-        .run(id, folio, b.proyecto || "", b.cliente || "", b.clase || "Directa", ahora(), yo.nombre, ahora(), yo.nombre);
+      db.prepare("INSERT INTO compras (id,folio,proyecto,cliente,clase,destino,creado,creado_por,actualizado,actualizado_por) VALUES (?,?,?,?,?,?,?,?,?,?)")
+        .run(id, folio, b.proyecto || "", b.cliente || "", b.clase || "Directa", b.destino || "proyecto", ahora(), yo.nombre, ahora(), yo.nombre);
       registrarBitacora(id, yo.nombre, "Crear", "Expediente " + folio + " creado");
       return json(res, 200, { id, folio });
     }
@@ -369,8 +371,8 @@ const servidor = http.createServer(async (req, res) => {
     }
     if (mCompra && req.method === "PUT") {
       const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
-      db.prepare("UPDATE compras SET proyecto=?,cliente=?,clase=?,actualizado=?,actualizado_por=? WHERE id=?")
-        .run(b.proyecto || "", b.cliente || "", b.clase || "Directa", ahora(), yo.nombre, mCompra[1]);
+      db.prepare("UPDATE compras SET proyecto=?,cliente=?,clase=?,destino=?,actualizado=?,actualizado_por=? WHERE id=?")
+        .run(b.proyecto || "", b.cliente || "", b.clase || "Directa", b.destino || "proyecto", ahora(), yo.nombre, mCompra[1]);
       avisarCambio(mCompra[1], "cabecera");
       return json(res, 200, { ok: true });
     }

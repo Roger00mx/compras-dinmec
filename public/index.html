@@ -95,7 +95,7 @@ function pintar(){
   const filtradas=LISTA.filter(c=>coincideFiltro(c) && (
     !q || ("req-"+c.folio).toLowerCase().includes(q) || (c.folio||"").includes(q) ||
     (c.proyecto||"").toLowerCase().includes(q) || (c.cliente||"").toLowerCase().includes(q) ||
-    (c.tipo_compra||"").toLowerCase().includes(q)
+    (c.tipo_compra||"").toLowerCase().includes(q) || (c.destino||"").toLowerCase().includes(q)
   ));
   if(!filtradas.length){
     cont.className="";
@@ -106,9 +106,10 @@ function pintar(){
   cont.innerHTML=filtradas.map(c=>`
     <div class="tarjeta" onclick="location.href='compra.html?id=${c.id}'">
       <div class="cli">REQ-${escaparHTML(c.folio)}</div>
-      <div class="meta">${escaparHTML(c.proyecto||"(Sin proyecto)")} ${c.cliente?("· "+escaparHTML(c.cliente)):""}</div>
+      <div class="meta">${c.destino==="INTERNA DINMEC"?"Uso interno DINMEC":(escaparHTML(c.proyecto||"(Sin proyecto)")+" "+(c.cliente?("· "+escaparHTML(c.cliente)):""))}</div>
       <div class="chips">
         <span class="chip ${c.resumen.color}">${escaparHTML(c.resumen.etiqueta)}</span>
+        ${c.destino==="INTERNA DINMEC"?`<span class="chip azul">INTERNA DINMEC</span>`:""}
         ${c.tipo_compra?`<span class="chip">${escaparHTML(c.tipo_compra)}</span>`:""}
         ${c.fecha_requerida?`<span class="chip gris">Entrega ${fechaCorta(c.fecha_requerida)}</span>`:""}
       </div>
@@ -122,19 +123,32 @@ function nuevaCompra(){
   fondo.innerHTML=`<div class="modal"><h2>Nueva requisición de compra</h2>
     <p style="color:#5b6470;margin-top:-6px;font-size:.88rem">Se creará el expediente con folio automático (FO-GDC-01).</p>
     <div class="campos" style="grid-template-columns:1fr 1fr">
-      <div class="campo"><label>Proyecto</label><input id="n-proyecto"></div>
-      <div class="campo"><label>Cliente</label><input id="n-cliente"></div>
+      <div class="campo" style="grid-column:1/-1"><label>Destino de la compra</label>
+        <select id="n-destino">
+          <option value="proyecto">Para proyecto / cliente</option>
+          <option value="INTERNA DINMEC">INTERNA DINMEC (uso interno, sin proyecto)</option>
+        </select></div>
+      <div class="campo" id="n-caja-proyecto"><label>Proyecto</label><input id="n-proyecto"></div>
+      <div class="campo" id="n-caja-cliente"><label>Cliente</label><input id="n-cliente"></div>
       <div class="campo" style="grid-column:1/-1"><label>Clase de compra</label>
         <select id="n-clase"><option>Directa</option><option>Indirecta</option></select></div>
     </div>
     <div class="acciones"><button class="btn fantasma" id="n-cancel">Cancelar</button><button class="btn primario" id="n-ok">Crear expediente</button></div>
   </div>`;
   document.body.appendChild(fondo);
+  fondo.querySelector("#n-destino").onchange=e=>{
+    const interna=e.target.value==="INTERNA DINMEC";
+    fondo.querySelector("#n-caja-proyecto").style.display=interna?"none":"";
+    fondo.querySelector("#n-caja-cliente").style.display=interna?"none":"";
+    fondo.querySelector("#n-clase").value=interna?"Indirecta":"Directa";
+  };
   fondo.querySelector("#n-cancel").onclick=()=>fondo.remove();
   fondo.querySelector("#n-ok").onclick=async()=>{
+    const interna=fondo.querySelector("#n-destino").value==="INTERNA DINMEC";
     const r=await api.post("/api/compras",{
-      proyecto:fondo.querySelector("#n-proyecto").value.trim(),
-      cliente:fondo.querySelector("#n-cliente").value.trim(),
+      destino:fondo.querySelector("#n-destino").value,
+      proyecto:interna?"":fondo.querySelector("#n-proyecto").value.trim(),
+      cliente:interna?"":fondo.querySelector("#n-cliente").value.trim(),
       clase:fondo.querySelector("#n-clase").value});
     location.href="compra.html?id="+r.id;
   };
