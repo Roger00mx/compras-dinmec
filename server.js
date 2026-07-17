@@ -156,14 +156,19 @@ function registrarBitacora(compraId, usuario, accion, detalle) {
     .run(uid(), compraId, usuario || "", ahora(), accion, detalle || "");
 }
 
-// ---------- Folio consecutivo por año ----------
+// ---------- Folio consecutivo por día: DD.MM.AA-## (ej. 07.07.26-01) ----------
+function fechaLocalMx() {
+  const partes = new Intl.DateTimeFormat("es-MX", { timeZone: "America/Mexico_City", day: "2-digit", month: "2-digit", year: "2-digit" }).formatToParts(new Date());
+  const g = (t) => (partes.find((x) => x.type === t) || {}).value || "";
+  return { dd: g("day"), mm: g("month"), yy: g("year") };
+}
 function nuevoFolio() {
-  const anio = new Date().getFullYear();
-  const pref = anio + "-";
+  const { dd, mm, yy } = fechaLocalMx();
+  const pref = dd + "." + mm + "." + yy + "-";
   const filas = db.prepare("SELECT folio FROM compras WHERE folio LIKE ?").all(pref + "%");
   let max = 0;
-  for (const f of filas) { const n = parseInt((f.folio || "").split("-")[1], 10); if (n > max) max = n; }
-  return pref + String(max + 1).padStart(3, "0");
+  for (const f of filas) { const n = parseInt((f.folio || "").slice(pref.length), 10); if (n > max) max = n; }
+  return pref + String(max + 1).padStart(2, "0");
 }
 
 // ---------- Estado y progreso del expediente ----------
@@ -380,9 +385,9 @@ const servidor = http.createServer(async (req, res) => {
       // Cambiar el folio: solo administrador (para empatar con el consecutivo en papel)
       if (b.folio !== undefined && String(b.folio).trim() !== actual.folio) {
         if (yo.rol_app !== "admin") return json(res, 403, { error: "Solo el administrador puede cambiar el folio" });
-        const m = String(b.folio).trim().match(/^(\d{4})-(\d{1,4})$/);
-        if (!m) return json(res, 400, { error: "Folio inválido. Usa el formato AAAA-número, ej. 2026-045" });
-        const nuevo = m[1] + "-" + String(parseInt(m[2], 10)).padStart(3, "0");
+        const m = String(b.folio).trim().match(/^(\d{2})\.(\d{2})\.(\d{2})-(\d{1,3})$/);
+        if (!m) return json(res, 400, { error: "Folio inválido. Usa el formato DD.MM.AA-número, ej. 07.07.26-01" });
+        const nuevo = m[1] + "." + m[2] + "." + m[3] + "-" + String(parseInt(m[4], 10)).padStart(2, "0");
         const dup = db.prepare("SELECT id FROM compras WHERE folio=? AND id<>?").get(nuevo, mCompra[1]);
         if (dup) return json(res, 409, { error: "Ya existe otro expediente con el folio " + nuevo });
         folio = nuevo;
