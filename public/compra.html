@@ -785,3 +785,16 @@ async function quitarFactura(i){
   await guardarSeccion("cxp", d, [], "Factura eliminada");
 }
 
+// ================= Bitácora =================
+async function cargarBitacora(){
+  const lista=await api.get("/api/bitacora/"+ID);
+  document.getElementById("bitacora").innerHTML=lista.length?lista.map(b=>
+    `<div class="bit"><b>${escaparHTML(b.usuario)}</b> · ${escaparHTML(b.accion)} — ${escaparHTML(b.detalle)}<div class="f">${new Date(b.fecha).toLocaleString("es-MX")}</div></div>`
+  ).join(""):`<span style="color:var(--gris)">Sin movimientos aún.</span>`;
+}
+
+inicio();
+</script>
+</body>
+</html>
+
