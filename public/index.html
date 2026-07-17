@@ -146,11 +146,15 @@ function nuevaCompra(){
   fondo.querySelector("#n-cancel").onclick=()=>fondo.remove();
   fondo.querySelector("#n-ok").onclick=async()=>{
     const interna=fondo.querySelector("#n-destino").value==="INTERNA DINMEC";
-    const r=await api.post("/api/compras",{
-      destino:fondo.querySelector("#n-destino").value,
-      proyecto:interna?"":fondo.querySelector("#n-proyecto").value.trim(),
-      cliente:interna?"":fondo.querySelector("#n-cliente").value.trim(),
-      clase:fondo.querySelector("#n-clase").value});
+    let r;
+    try{
+      r=await api.post("/api/compras",{
+        destino:fondo.querySelector("#n-destino").value,
+        proyecto:interna?"":fondo.querySelector("#n-proyecto").value.trim(),
+        cliente:interna?"":fondo.querySelector("#n-cliente").value.trim(),
+        clase:fondo.querySelector("#n-clase").value});
+    }catch(err){ aviso("⚠️ Sin conexión con el servidor: "+err.message); return; }
+    if(!r || r.error || !r.id){ aviso("⚠️ No se pudo crear: "+((r&&r.error)||"respuesta inválida del servidor")); return; }
     location.href="compra.html?id="+r.id;
   };
 }
@@ -167,4 +171,18 @@ function mostrarDireccion(){
   const url = location.origin;
   const fondo=document.createElement("div"); fondo.className="modal-fondo";
   fondo.innerHTML=`<div class="modal"><h2>📲 Compartir acceso</h2>
-    <p style="color:#5b6470
+    <p style="color:#5b6470">Para que tus compañeros entren desde su celular o PC, comparte esta dirección:</p>
+    <div style="background:#eef4fc;border:1.5px solid #cfe0f5;border-radius:10px;padding:14px;text-align:center;font-size:1.3rem;font-weight:700;color:#13407a;word-break:break-all">${url}</div>
+    <div class="acciones">
+      <button class="btn fantasma" id="d-copiar">Copiar dirección</button>
+      <button class="btn primario" id="d-ok">Listo</button>
+    </div></div>`;
+  document.body.appendChild(fondo);
+  fondo.querySelector("#d-ok").onclick=()=>fondo.remove();
+  fondo.querySelector("#d-copiar").onclick=()=>{ navigator.clipboard?.writeText(url); aviso("Dirección copiada"); };
+}
+
+inicio();
+</script>
+</body>
+</html>

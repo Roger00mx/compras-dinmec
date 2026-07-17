@@ -73,7 +73,10 @@ db.exec(`
   );
 `);
 // Migraciones (columnas agregadas después de la versión 1.0)
-try { db.exec("ALTER TABLE compras ADD COLUMN destino TEXT"); } catch (_) {}
+{
+  const cols = db.prepare("PRAGMA table_info(compras)").all().map((c) => c.name);
+  if (!cols.includes("destino")) db.exec("ALTER TABLE compras ADD COLUMN destino TEXT");
+}
 
 // ---------- Utilidades ----------
 const ahora = () => new Date().toISOString();
