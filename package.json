@@ -1,0 +1,7 @@
+{
+  "name": "compras-dinmec",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Compras SGC Digital - DINMEC (PS-GDC-01, FO-GDC-01 a 07)",
+  "scripts": { "start": "node server.js" }
+}

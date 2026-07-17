@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Cuentas por pagar — Compras SGC</title>
+<meta name="theme-color" content="#13407a">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div class="barra">
+  <div class="logo" style="cursor:pointer" onclick="location.href='index.html'">← <b>DINMEC</b> <span>Cuentas por pagar</span></div>
+  <div class="crece"></div>
+  <div class="usuario" id="usuario">…</div>
+</div>
+
+<div class="contenedor">
+  <div class="seccion-tit">
+    <h2>Cuentas por pagar <span class="chip gris" id="chipFo"></span></h2>
+    <div class="crece"></div>
+    <label style="display:flex;align-items:center;gap:7px;font-size:.88rem;cursor:pointer">
+      <input type="checkbox" id="soloPend" checked onchange="pintar()"> Solo pendientes de pago
+    </label>
+  </div>
+  <div id="resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0"></div>
+  <div id="lista"></div>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let USUARIO, CAT, DATA=[];
+async function inicio(){
+  USUARIO=await exigirSesion(); if(!USUARIO) return;
+  document.getElementById("usuario").textContent="👤 "+USUARIO.nombre;
+  CAT=await api.get("/api/catalogos");
+  document.getElementById("chipFo").textContent=CAT.versiones.cxp;
+  DATA=await api.get("/api/cxp");
+  pintar();
+  conectarEnVivo(async()=>{ DATA=await api.get("/api/cxp"); pintar(); });
+}
+function diasPara(f){ return f.vencimiento?Math.ceil((new Date(f.vencimiento+"T12:00:00")-new Date())/86400000):null; }
+function bucket(f){
+  const d=diasPara(f);
+  if(d===null) return "porVencer";
+  if(d>=0) return "porVencer";
+  if(d>=-15) return "v15";
+  if(d>=-30) return "v30";
+  return "v30mas";
+}
+function pintar(){
+  const soloPend=document.getElementById("soloPend").checked;
+  const tot={porVencer:{mxn:0,usd:0},v15:{mxn:0,usd:0},v30:{mxn:0,usd:0},v30mas:{mxn:0,usd:0},pagado:{mxn:0,usd:0}};
+  let html="";
+  for(const g of DATA){
+    const facturas=g.facturas.filter(f=>!soloPend||!f.pagada);
+    for(const f of g.facturas){
+      const m=(f.moneda==="USD")?"usd":"mxn", imp=parseFloat(f.importe)||0;
+      if(f.pagada) tot.pagado[m]+=imp; else tot[bucket(f)][m]+=imp;
+    }
+    if(!facturas.length) continue;
+    html+=`<div class="cxp-prov">
+      <h3>${escaparHTML(g.proveedor.razon_social)}</h3>
+      <div class="meta" style="font-size:.83rem;color:var(--gris)">Días de crédito: ${g.proveedor.credito_dias||0} · Contacto: ${escaparHTML(g.proveedor.contacto||"—")} ${g.proveedor.telefono?("· Tel: "+escaparHTML(g.proveedor.telefono)):""}</div>
+      <div class="ptabla-scroll"><table class="ptabla"><thead>
+        <tr><th>Factura</th><th>Expediente</th><th>Fecha</th><th>Importe</th><th>Vencimiento</th><th>Situación</th><th>Autorizada</th><th>Pagada</th></tr></thead>
+        <tbody>${facturas.map(f=>{
+          const d=diasPara(f);
+          const sit=f.pagada?`<span class="chip verde">Pagada</span>`:(d===null?"—":(d<0?`<span class="chip rojo">Vencida hace ${Math.abs(d)} días</span>`:(d<=7?`<span class="chip ambar">Vence en ${d} días</span>`:`<span class="chip gris">Por vencer (${d} días)</span>`)));
+          return `<tr>
+            <td><b>${escaparHTML(f.folio||"")}</b></td>
+            <td><a href="compra.html?id=${f.compra_id}">REQ-${escaparHTML(f.folio_compra)}</a></td>
+            <td>${fechaCorta(f.fecha)}</td>
+            <td class="num">${dinero(f.importe,f.moneda)}</td>
+            <td>${fechaCorta(f.vencimiento)}</td>
+            <td>${sit}</td>
+            <td>${f.autorizada?"✔":"—"}</td>
+            <td>${f.pagada?("✔ "+fechaCorta(f.fecha_pago)):"—"}</td>
+          </tr>`;}).join("")}</tbody></table></div>
+    </div>`;
+  }
+  const caja=(t,obj,cl)=>`<div class="tarjeta" style="cursor:default;min-width:170px;flex:1">
+    <div class="meta" style="font-weight:700;color:var(--gris);text-transform:uppercase;font-size:.72rem">${t}</div>
+    <div class="cli ${cl||""}" style="font-size:1.05rem">${dinero(obj.mxn)} MXN</div>
+    ${obj.usd?`<div class="meta">${dinero(obj.usd)} USD</div>`:""}
+  </div>`;
+  document.getElementById("resumen").innerHTML=
+    caja("Por vencer",tot.porVencer)+caja("Vencidas 1–15",tot.v15,"venc-ambar")+
+    caja("Vencidas 16–30",tot.v30,"venc-rojo")+caja("Vencidas +30",tot.v30mas,"venc-rojo")+caja("Pagado",tot.pagado);
+  document.getElementById("lista").innerHTML=html||`<div class="vacio">No hay facturas ${soloPend?"pendientes":""} registradas.</div>`;
+}
+inicio();
+</script>
+</body>
+</html>

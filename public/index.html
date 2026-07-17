@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Compras SGC Digital — DINMEC</title>
+<meta name="theme-color" content="#13407a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Compras SGC">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="apple-touch-icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div class="barra">
+  <div class="logo"><b>DINMEC</b> <span>Compras SGC</span></div>
+  <div class="crece"></div>
+  <div class="envivo"><i></i> En vivo</div>
+  <button class="btn fantasma chico" data-instalar style="display:none;background:rgba(255,255,255,.14);color:#fff;border:none" onclick="instalarApp()">⬇️ Instalar app</button>
+  <div class="usuario" id="usuario" onclick="menuUsuario()">…</div>
+</div>
+
+<div class="contenedor">
+  <div class="seccion-tit">
+    <h2>Compras</h2>
+    <div class="crece"></div>
+    <button class="btn fantasma chico" onclick="location.href='proveedores.html'">🏭 Proveedores</button>
+    <button class="btn fantasma chico" onclick="location.href='cxp.html'">💳 Cuentas por pagar</button>
+    <button class="btn primario" onclick="nuevaCompra()">+ Nueva requisición</button>
+  </div>
+
+  <div class="filtros">
+    <input class="buscar" id="buscar" placeholder="🔎 Buscar folio, proyecto, cliente…" oninput="pintar()">
+    <div class="filtro activo" data-f="todas" onclick="filtrar(this)">Todas</div>
+    <div class="filtro" data-f="pendientes" onclick="filtrar(this)">Por autorizar</div>
+    <div class="filtro" data-f="proceso" onclick="filtrar(this)">En proceso</div>
+    <div class="filtro" data-f="cerradas" onclick="filtrar(this)">Cerradas</div>
+    <div class="filtro" data-f="rechazadas" onclick="filtrar(this)">Rechazadas</div>
+  </div>
+
+  <div id="lista"></div>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let USUARIO, LISTA=[], FILTRO="todas";
+
+async function inicio(){
+  USUARIO = await exigirSesion();
+  if(!USUARIO) return;
+  document.getElementById("usuario").textContent = "👤 " + USUARIO.nombre;
+  await cargar();
+  conectarEnVivo(()=>cargar());
+}
+
+function menuUsuario(){
+  const fondo=document.createElement("div"); fondo.className="modal-fondo";
+  fondo.innerHTML=`<div class="modal" style="width:340px">
+    <h2>👤 ${escaparHTML(USUARIO.nombre)}</h2>
+    <p style="color:#5b6470;margin-top:-6px">${escaparHTML(USUARIO.rol||"")} ${USUARIO.rol_app==="admin"?"· administrador":""}</p>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+      ${USUARIO.rol_app==="admin"?`<button class="btn fantasma" onclick="location.href='usuarios.html'">👥 Administrar usuarios</button>`:""}
+      <button class="btn fantasma" onclick="mostrarDireccion()">📲 Compartir acceso</button>
+      <button class="btn peligro" onclick="cerrarSesion()">Cerrar sesión</button>
+      <button class="btn" onclick="this.closest('.modal-fondo').remove()">Cancelar</button>
+    </div></div>`;
+  document.body.appendChild(fondo);
+  fondo.addEventListener("click",e=>{ if(e.target===fondo) fondo.remove(); });
+}
+
+async function cargar(){
+  LISTA = await api.get("/api/compras");
+  pintar();
+}
+
+function filtrar(el){
+  document.querySelectorAll(".filtro").forEach(f=>f.classList.remove("activo"));
+  el.classList.add("activo"); FILTRO=el.dataset.f; pintar();
+}
+
+function coincideFiltro(c){
+  const e=c.resumen.etiqueta;
+  if(FILTRO==="pendientes") return e==="Req. en autorización"||e==="En cotización"||e==="Selección aprobada"||e==="Req. autorizada"||e==="OC autorizada";
+  if(FILTRO==="proceso") return !e.includes("Cerrada") && e!=="Rechazada";
+  if(FILTRO==="cerradas") return e.includes("Cerrada");
+  if(FILTRO==="rechazadas") return e==="Rechazada";
+  return true;
+}
+
+function pintar(){
+  const q=(document.getElementById("buscar").value||"").toLowerCase();
+  const cont=document.getElementById("lista");
+  const filtradas=LISTA.filter(c=>coincideFiltro(c) && (
+    !q || ("req-"+c.folio).toLowerCase().includes(q) || (c.folio||"").includes(q) ||
+    (c.proyecto||"").toLowerCase().includes(q) || (c.cliente||"").toLowerCase().includes(q) ||
+    (c.tipo_compra||"").toLowerCase().includes(q)
+  ));
+  if(!filtradas.length){
+    cont.className="";
+    cont.innerHTML=`<div class="vacio">${LISTA.length?"No hay compras con este filtro.":"Aún no hay compras."}<br><br><button class="btn primario" onclick="nuevaCompra()">+ Crear la primera requisición</button></div>`;
+    return;
+  }
+  cont.className="grid";
+  cont.innerHTML=filtradas.map(c=>`
+    <div class="tarjeta" onclick="location.href='compra.html?id=${c.id}'">
+      <div class="cli">REQ-${escaparHTML(c.folio)}</div>
+      <div class="meta">${escaparHTML(c.proyecto||"(Sin proyecto)")} ${c.cliente?("· "+escaparHTML(c.cliente)):""}</div>
+      <div class="chips">
+        <span class="chip ${c.resumen.color}">${escaparHTML(c.resumen.etiqueta)}</span>
+        ${c.tipo_compra?`<span class="chip">${escaparHTML(c.tipo_compra)}</span>`:""}
+        ${c.fecha_requerida?`<span class="chip gris">Entrega ${fechaCorta(c.fecha_requerida)}</span>`:""}
+      </div>
+      <div class="barraprog"><i style="width:${c.resumen.pct}%"></i></div>
+      <div class="meta" style="font-size:.76rem">Últ. cambio: ${escaparHTML(c.actualizado_por||"")} · ${fechaCorta(c.actualizado)}</div>
+    </div>`).join("");
+}
+
+function nuevaCompra(){
+  const fondo=document.createElement("div"); fondo.className="modal-fondo";
+  fondo.innerHTML=`<div class="modal"><h2>Nueva requisición de compra</h2>
+    <p style="color:#5b6470;margin-top:-6px;font-size:.88rem">Se creará el expediente con folio automático (FO-GDC-01).</p>
+    <div class="campos" style="grid-template-columns:1fr 1fr">
+      <div class="campo"><label>Proyecto</label><input id="n-proyecto"></div>
+      <div class="campo"><label>Cliente</label><input id="n-cliente"></div>
+      <div class="campo" style="grid-column:1/-1"><label>Clase de compra</label>
+        <select id="n-clase"><option>Directa</option><option>Indirecta</option></select></div>
+    </div>
+    <div class="acciones"><button class="btn fantasma" id="n-cancel">Cancelar</button><button class="btn primario" id="n-ok">Crear expediente</button></div>
+  </div>`;
+  document.body.appendChild(fondo);
+  fondo.querySelector("#n-cancel").onclick=()=>fondo.remove();
+  fondo.querySelector("#n-ok").onclick=async()=>{
+    const r=await api.post("/api/compras",{
+      proyecto:fondo.querySelector("#n-proyecto").value.trim(),
+      cliente:fondo.querySelector("#n-cliente").value.trim(),
+      clase:fondo.querySelector("#n-clase").value});
+    location.href="compra.html?id="+r.id;
+  };
+}
+
+function mostrarDireccion(){
+  const url = location.origin;
+  const fondo=document.createElement("div"); fondo.className="modal-fondo";
+  fondo.innerHTML=`<div class="modal"><h2>📲 Compartir acceso</h2>
+    <p style="color:#5b6470">Para que tus compañeros entren desde su celular o PC, comparte esta dirección:</p>
+    <div style="background:#eef4fc;border:1.5px solid #cfe0f5;border-radius:10px;padding:14px;text-align:center;font-size:1.3rem;font-weight:700;color:#13407a;word-break:break-all">${url}</div>
+    <div class="acciones">
+      <button class="btn fantasma" id="d-copiar">Copiar dirección</button>
+      <button class="btn primario" id="d-ok">Listo</button>
+    </div></div>`;
+  document.body.appendChild(fondo);
+  fondo.querySelector("#d-ok").onclick=()=>fondo.remove();
+  fondo.querySelector("#d-copiar").onclick=()=>{ navigator.clipboard?.writeText(url); aviso("Dirección copiada"); };
+}
+
+inicio();
+</script>
+</body>
+</html>

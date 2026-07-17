@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Imprimir — Compras SGC</title>
+<style>
+  :root{--azul:#13407a;--linea:#c9d2dd;--gris:#5b6470}
+  *{box-sizing:border-box}
+  body{font-family:"Segoe UI",Arial,sans-serif;color:#1f2733;margin:0;background:#eef1f5;font-size:12.5px;line-height:1.4}
+  .hoja{background:#fff;max-width:850px;margin:14px auto;padding:28px 32px;box-shadow:0 2px 10px rgba(0,0,0,.12)}
+  .doc-cab{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid var(--azul);padding-bottom:8px;margin-bottom:14px}
+  .doc-cab .marca{font-size:1.35rem;font-weight:800;color:var(--azul)}
+  .doc-cab .fo{text-align:right;font-size:.78rem;color:var(--gris)}
+  .doc-cab .fo b{display:block;font-size:1rem;color:var(--azul)}
+  h2{color:var(--azul);font-size:1.05rem;margin:0 0 8px;text-transform:uppercase;letter-spacing:.5px}
+  table{width:100%;border-collapse:collapse;margin-top:6px}
+  th{background:#eef4fc;color:var(--azul);text-align:left;padding:5px 7px;font-size:.72rem;text-transform:uppercase;border:1px solid var(--linea)}
+  td{border:1px solid var(--linea);padding:5px 7px;vertical-align:top}
+  .kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:4px 18px;margin:6px 0}
+  .kv div{font-size:.85rem}
+  .kv b{color:var(--gris);font-weight:600;font-size:.72rem;text-transform:uppercase;display:block}
+  .tot{text-align:right;margin-top:6px;font-size:.9rem}
+  .tot .g{font-size:1.05rem;font-weight:800;color:var(--azul)}
+  .firmas{display:flex;gap:24px;margin-top:18px;flex-wrap:wrap}
+  .firma{flex:1;min-width:200px;text-align:center}
+  .firma img{height:60px;display:block;margin:0 auto}
+  .firma .linea{border-top:1.5px solid #333;margin-top:4px;padding-top:4px;font-size:.8rem}
+  .firma .rol{font-size:.72rem;color:var(--gris)}
+  .sello{font-size:.75rem;color:#0f7a44;background:#e6f5ec;border-radius:6px;padding:5px 9px;display:inline-block;margin-top:6px}
+  .leyenda{font-size:.66rem;color:var(--gris);border-top:1px solid var(--linea);margin-top:16px;padding-top:6px}
+  .barra-acciones{position:sticky;top:0;background:var(--azul);padding:10px 16px;display:flex;gap:10px;justify-content:center;z-index:5}
+  .barra-acciones button{border:none;border-radius:8px;padding:9px 18px;font-weight:700;cursor:pointer;font-family:inherit}
+  .chipNC{color:#d23f3f;font-weight:700}
+  @media print{ .barra-acciones{display:none} body{background:#fff} .hoja{box-shadow:none;margin:0;max-width:100%;page-break-after:always} }
+</style>
+</head>
+<body>
+<div class="barra-acciones">
+  <button onclick="window.print()" style="background:#fff;color:#13407a">🖨 Imprimir / Guardar como PDF</button>
+  <button onclick="window.close()" style="background:rgba(255,255,255,.18);color:#fff">Cerrar</button>
+</div>
+<div id="contenido">Cargando…</div>
+
+<script src="comun.js"></script>
+<script>
+let ID=paramURL("id"), DOC=paramURL("doc"); // doc=oc → solo la orden de compra
+async function inicio(){
+  const est=await api.get("/api/estado");
+  if(!est.yo){ document.getElementById("contenido").innerHTML="<div class='hoja'>Necesitas iniciar sesión.</div>"; return; }
+  const CAT=await api.get("/api/catalogos");
+  const PROVS=await api.get("/api/proveedores");
+  const D=await api.get("/api/compra/"+ID);
+  if(D.error){ document.getElementById("contenido").innerHTML="<div class='hoja'>Expediente no encontrado.</div>"; return; }
+  const prov=id=>PROVS.find(p=>p.id===id);
+  const s=id=>D.secciones[id]||{datos:{},firmas:[]};
+  const c=D.compra;
+  const F=CAT.facturacion;
+  const e=escaparHTML;
+
+  function cab(titulo, fo){
+    return `<div class="doc-cab">
+      <div><div class="marca">DINMEC</div><div style="font-size:.78rem;color:var(--gris)">DINMEC SOLUTIONS S DE RL DE CV · Sistema de Gestión de Calidad</div></div>
+      <div class="fo"><b>${titulo}</b>${fo}<br>Folio: ${titulo.startsWith("ORDEN")?"OC":"REQ"}-${e(c.folio)}</div>
+    </div>`;
+  }
+  function firmasHTML(fs){
+    const con=(fs||[]).filter(f=>f.firma||f.nombre);
+    if(!con.length) return "";
+    return `<div class="firmas">${con.map(f=>`<div class="firma">
+      ${f.firma?`<img src="${f.firma}">`:`<div style="height:60px"></div>`}
+      <div class="linea">${e(f.nombre||"")}</div>
+      <div class="rol">${e(f.rol)}${f.fecha?(" · "+fechaCorta(f.fecha)):""}</div>
+    </div>`).join("")}</div>`;
+  }
+  const leyenda=`<div class="leyenda">Documento generado electrónicamente por Compras SGC Digital — DINMEC. Las firmas y sellos de tiempo quedan registrados en la bitácora del expediente (PS-GDC-01 Ver. 00). Cada copia impresa se considera COPIA NO CONTROLADA.</div>`;
+
+  let html="";
+
+  // ---------- REQUISICIÓN ----------
+  const rq=s("requisicion");
+  if(DOC!=="oc" && (rq.datos.estado||"" )!==""){
+    const d=rq.datos;
+    html+=`<div class="hoja">${cab("REQUISICIÓN DE COMPRA", d.version||CAT.versiones.requisicion)}
+      <div class="kv">
+        <div><b>Proyecto</b>${e(c.proyecto||"—")}</div><div><b>Cliente</b>${e(c.cliente||"—")}</div>
+        <div><b>Clase</b>${e(c.clase||"")}</div><div><b>Tipo de compra</b>${e(d.tipo_compra||"—")}</div>
+        <div><b>Fecha de solicitud</b>${fechaCorta(d.fecha_solicitud)||"—"}</div><div><b>Fecha requerida</b>${fechaCorta(d.fecha_requerida)||"—"}</div>
+      </div>
+      <table><thead><tr><th style="width:34px">Item</th><th style="width:80px">Cantidad</th><th style="width:70px">Unidad</th><th>Descripción</th><th style="width:150px">Nota</th></tr></thead>
+      <tbody>${(d.partidas||[]).map((p,i)=>`<tr><td>${i+1}</td><td>${e(p.cantidad||"")}</td><td>${e(p.unidad||"")}</td><td>${e(p.descripcion||"")}</td><td>${e(p.nota||"")}</td></tr>`).join("")}</tbody></table>
+      ${d.observaciones?`<div style="margin-top:8px;font-size:.85rem"><b style="color:var(--gris)">Observaciones:</b> ${e(d.observaciones)}</div>`:""}
+      ${d.estado==="autorizada"?`<div class="sello">✔ Autorizada electrónicamente por ${e(d.autorizada_por||"")} · ${new Date(d.fecha_autorizacion).toLocaleString("es-MX")}</div>`:""}
+      ${d.estado==="rechazada"?`<div class="sello" style="background:#fdeaea;color:#d23f3f">✗ Rechazada · ${e(d.motivo_rechazo||"")}</div>`:""}
+      ${firmasHTML(rq.firmas)}${leyenda}</div>`;
+  }
+
+  // ---------- SELECCIÓN ----------
+  const sl=s("seleccion");
+  if(DOC!=="oc" && (sl.datos.cotizaciones||[]).length){
+    const d=sl.datos;
+    html+=`<div class="hoja">${cab("SELECCIÓN DE PROVEEDOR", d.version||CAT.versiones.seleccion)}
+      <table><thead><tr><th>#</th><th>Proveedor</th><th>Contacto</th><th>Descripción</th><th>Cant.</th><th>Criterios que cumple</th><th>Total</th><th>Estado</th></tr></thead>
+      <tbody>${d.cotizaciones.map((q,i)=>{const p=prov(q.proveedor_id);return `<tr ${q.seleccionado?'style="background:#e6f5ec"':""}>
+        <td>${i+1}</td><td>${e(p?p.razon_social:"—")}</td><td>${e(p?(p.contacto||"")+" "+(p.telefono||""):"")}</td>
+        <td>${e(q.descripcion||"")}</td><td>${e(q.cantidad||"")} ${e(q.unidad||"")}</td>
+        <td>${(q.criterios||[]).join(", ")}</td><td>${dinero(q.total)}</td>
+        <td>${q.seleccionado?"<b>SELECCIONADO ✔</b>":"No seleccionado"}</td></tr>`;}).join("")}</tbody></table>
+      ${d.cotizaciones.length<3?`<div style="margin-top:8px;font-size:.85rem"><b style="color:var(--gris)">Justificación (menos de 3 cotizaciones):</b> ${e(d.justificacion||"")}</div>`:""}
+      ${d.estado==="aprobada"?`<div class="sello">✔ Aprobada electrónicamente por ${e(d.aprobada_por||"")} · ${new Date(d.fecha_aprobacion).toLocaleString("es-MX")}</div>`:""}
+      ${firmasHTML(sl.firmas)}${leyenda}</div>`;
+  }
+
+  // ---------- ORDEN DE COMPRA ----------
+  const oc=s("oc");
+  if((oc.datos.partidas||[]).length){
+    const d=oc.datos; const p=prov(d.proveedor_id);
+    html+=`<div class="hoja">${cab("ORDEN DE COMPRA", d.version||CAT.versiones.oc)}
+      <div style="display:flex;gap:20px;flex-wrap:wrap">
+        <div style="flex:1;min-width:260px">
+          <h2 style="font-size:.8rem">Datos de facturación</h2>
+          <div style="font-size:.83rem"><b>${e(F.razon)}</b><br>${e(F.direccion1)}<br>${e(F.direccion2)}<br>R.F.C.: ${e(F.rfc)} · Tel: ${e(F.tel)}<br>${e(F.email)}</div>
+        </div>
+        <div style="flex:1;min-width:260px">
+          <h2 style="font-size:.8rem">Proveedor</h2>
+          <div style="font-size:.83rem"><b>${e(p?p.razon_social:"—")}</b><br>${e(p?p.direccion||"":"")}<br>Contacto: ${e(p?p.contacto||"":"")} · Tel: ${e(p?p.telefono||"":"")}<br>${e(p?p.email||"":"")}</div>
+        </div>
+      </div>
+      <div class="kv" style="margin-top:10px">
+        <div><b>Fecha</b>${fechaCorta(d.fecha_autorizacion)||fechaCorta(oc.actualizado)||""}</div>
+        <div><b>Cotización</b>${e(d.cotizacion||"—")}</div>
+        <div><b>Uso de CFDI</b>${e(d.uso_cfdi||"")}</div>
+        <div><b>Forma de pago</b>${e(d.forma_pago||"")}</div>
+        <div><b>Método de pago</b>${e(d.metodo_pago||"")}</div>
+        <div><b>Cond. de pago</b>${e(d.cond_pago||"")}</div>
+        <div><b>Moneda</b>${e(d.moneda||"MXN")}</div>
+        <div><b>Tiempo de entrega</b>${e(d.tiempo_entrega||"—")}</div>
+      </div>
+      <table><thead><tr><th style="width:80px">Cantidad</th><th style="width:70px">Unidad</th><th>Descripción</th><th style="width:110px">Precio unitario</th><th style="width:110px">Importe total</th></tr></thead>
+      <tbody>${d.partidas.map(q=>`<tr><td>${e(q.cantidad||"")}</td><td>${e(q.unidad||"")}</td><td>${e(q.descripcion||"")}</td><td style="text-align:right">${dinero(q.precio)}</td><td style="text-align:right">${dinero(q.importe)}</td></tr>`).join("")}</tbody></table>
+      <div class="tot">Sub-total: ${dinero(d.subtotal)} &nbsp;·&nbsp; Descuento: ${dinero(d.descuento)} &nbsp;·&nbsp; IVA: ${dinero(d.iva)}<br>
+        <span class="g">TOTAL: ${dinero(d.total, d.moneda)}</span></div>
+      ${d.estado==="autorizada"||d.estado==="enviada"?`<div class="sello">✔ Autorizada electrónicamente por ${e(d.autorizada_por||"")} · ${new Date(d.fecha_autorizacion).toLocaleString("es-MX")}</div>`:""}
+      ${firmasHTML(oc.firmas)}${leyenda}</div>`;
+  }
+
+  // ---------- RECEPCIÓN ----------
+  const rc=s("recepcion");
+  if(DOC!=="oc" && (rc.datos.entregas||[]).length){
+    const d=rc.datos; const p=prov(s("oc").datos.proveedor_id);
+    html+=`<div class="hoja">${cab("ENTREGA DE MATERIALES (ALMACÉN)", d.entregas[0]?.version||CAT.versiones.recepcion)}
+      <div class="kv"><div><b>Proveedor</b>${e(p?p.razon_social:"—")}</div><div><b>Estado</b>${d.estado==="total"?"Recepción completa":"Parcial"}</div></div>
+      ${d.entregas.map((en,i)=>`
+        <h2 style="font-size:.85rem;margin-top:12px">Entrega ${i+1} · ${fechaCorta(en.fecha)} · Factura: ${e(en.factura||"—")} · ${en.resultado==="no conforme"?'<span class="chipNC">NO CONFORME ⚠</span>':"Conforme ✔"}</h2>
+        <table><thead><tr><th style="width:90px">Cantidad</th><th style="width:80px">Unidad</th><th>Descripción</th></tr></thead>
+        <tbody>${(en.partidas||[]).map(q=>`<tr><td>${e(q.cantidad||"")}</td><td>${e(q.unidad||"")}</td><td>${e(q.descripcion||"")}</td></tr>`).join("")}</tbody></table>
+        ${en.notas?`<div style="font-size:.83rem;margin-top:4px"><b style="color:#d23f3f">No conformidad:</b> ${e(en.notas)}</div>`:""}
+        <div class="firmas">
+          <div class="firma">${en.firma_entrega?`<img src="${en.firma_entrega}">`:`<div style="height:60px"></div>`}<div class="linea">${e(en.entrega_nombre||"")}</div><div class="rol">Información de entrega</div></div>
+          <div class="firma">${en.firma_recibe?`<img src="${en.firma_recibe}">`:`<div style="height:60px"></div>`}<div class="linea">${e(en.recibe_nombre||"")}</div><div class="rol">Información de recibido (almacén)</div></div>
+        </div>`).join("")}
+      ${leyenda}</div>`;
+  }
+
+  // ---------- CxP ----------
+  const cx=s("cxp");
+  if(DOC!=="oc" && (cx.datos.facturas||[]).length){
+    const d=cx.datos; const p=prov(s("oc").datos.proveedor_id);
+    html+=`<div class="hoja">${cab("CUENTAS POR PAGAR", CAT.versiones.cxp)}
+      <div class="kv"><div><b>Proveedor</b>${e(p?p.razon_social:"—")}</div><div><b>Días de crédito</b>${p?(p.credito_dias||0):0}</div></div>
+      <table><thead><tr><th>Factura</th><th>Fecha</th><th>Importe</th><th>Vencimiento</th><th>Autorizado para pago</th><th>Pagada</th></tr></thead>
+      <tbody>${d.facturas.map(f=>`<tr><td>${e(f.folio||"")}</td><td>${fechaCorta(f.fecha)}</td><td style="text-align:right">${dinero(f.importe,f.moneda)}</td><td>${fechaCorta(f.vencimiento)}</td>
+        <td>${f.autorizada?("✔ "+e(f.autorizada_por||"")):"Pendiente"}</td><td>${f.pagada?("✔ "+fechaCorta(f.fecha_pago)):"—"}</td></tr>`).join("")}</tbody></table>
+      ${leyenda}</div>`;
+  }
+
+  document.getElementById("contenido").innerHTML=html||`<div class="hoja">Este expediente aún no tiene información para imprimir.</div>`;
+  document.title=(DOC==="oc"?"OC-":"Expediente REQ-")+c.folio+" — DINMEC";
+}
+inicio();
+</script>
+</body>
+</html>

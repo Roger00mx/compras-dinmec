@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Proveedor — Compras SGC</title>
+<meta name="theme-color" content="#13407a">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div class="barra">
+  <div class="logo" style="cursor:pointer" onclick="location.href='proveedores.html'">← <b>DINMEC</b> <span>Proveedor</span></div>
+  <div class="crece"></div>
+  <div class="usuario" id="usuario">…</div>
+</div>
+
+<div class="contenedor">
+  <div class="seccion-tit"><h2 id="titulo">Cargando…</h2><div class="crece"></div><span class="chip" id="chipEstatus"></span></div>
+
+  <div class="cabecera">
+    <div class="campos" id="ficha"></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px;gap:10px">
+      <button class="btn peligro chico" id="btnEliminar" style="display:none" onclick="eliminar()">Eliminar proveedor</button>
+      <button class="btn primario chico" onclick="guardarFicha()">Guardar datos</button>
+    </div>
+  </div>
+
+  <div class="seccion-tit" style="margin-top:26px">
+    <h2>Evaluaciones <span class="chip gris" id="chipEval"></span></h2>
+    <div class="crece"></div>
+    <button class="btn primario" onclick="nuevaEvaluacion()">+ Evaluar proveedor</button>
+  </div>
+  <p style="color:#5b6470;font-size:.87rem;margin-top:-4px">La reevaluación es semestral según utilización (PS-GDC-01, etapa 8.3). Escala máx. 18 puntos.</p>
+  <div id="evaluaciones"></div>
+
+  <div class="seccion-tit" style="margin-top:26px"><h2>Historial de compras</h2></div>
+  <div id="historial"></div>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let USUARIO, CAT, ID=paramURL("id"), DATA;
+const CAMPOS=[["razon_social","Razón social"],["rfc","RFC"],["suministra","Suministra"],["credito_dias","Crédito (días)"],
+  ["condicion_pago","Condición de pago"],["forma_pago","Forma de pago"],["fecha_alta","Fecha de alta"],
+  ["direccion","Dirección fiscal"],["contacto","Contacto"],["telefono","Teléfono"],["email","Email"],["estatus","Estatus"]];
+
+async function inicio(){
+  USUARIO=await exigirSesion(); if(!USUARIO) return;
+  document.getElementById("usuario").textContent="👤 "+USUARIO.nombre;
+  CAT=await api.get("/api/catalogos");
+  document.getElementById("chipEval").textContent=CAT.versiones.evaluacion;
+  await cargar();
+}
+async function cargar(){
+  DATA=await api.get("/api/proveedor/"+ID);
+  if(DATA.error){ document.getElementById("titulo").textContent="Proveedor no encontrado"; return; }
+  const p=DATA.proveedor;
+  document.getElementById("titulo").textContent=p.razon_social;
+  const chip=document.getElementById("chipEstatus");
+  chip.textContent=p.estatus||"Aprobado";
+  chip.className="chip "+(p.estatus==="Restringido"?"rojo":(p.estatus==="Condicionado"?"ambar":"verde"));
+  if(USUARIO.rol_app==="admin") document.getElementById("btnEliminar").style.display="";
+  document.getElementById("ficha").innerHTML=CAMPOS.map(([k,et])=>{
+    if(k==="estatus") return `<div class="campo"><label>${et}</label><select id="f-${k}">${["Aprobado","Condicionado","Restringido","Inactivo"].map(o=>`<option ${o===(p[k]||"Aprobado")?"selected":""}>${o}</option>`).join("")}</select></div>`;
+    if(k==="condicion_pago") return `<div class="campo"><label>${et}</label><select id="f-${k}">${CAT.condiciones_pago.map(o=>`<option ${o===p[k]?"selected":""}>${o}</option>`).join("")}</select></div>`;
+    if(k==="forma_pago") return `<div class="campo"><label>${et}</label><select id="f-${k}">${CAT.forma_pago.map(o=>`<option ${o===p[k]?"selected":""}>${o}</option>`).join("")}</select></div>`;
+    const tipo=k==="fecha_alta"?"date":(k==="credito_dias"?"number":"text");
+    return `<div class="campo"><label>${et}</label><input id="f-${k}" type="${tipo}" value="${escaparHTML(p[k]??"")}"></div>`;
+  }).join("");
+  pintarEvaluaciones(); pintarHistorial();
+}
+
+async function guardarFicha(){
+  const body={};
+  for(const [k] of CAMPOS) body[k]=document.getElementById("f-"+k).value.trim();
+  const r=await api.put("/api/proveedor/"+ID, body);
+  if(r.error){ aviso("⚠️ "+r.error); return; }
+  aviso("Datos guardados ✓"); cargar();
+}
+async function eliminar(){
+  if(!confirm("¿Eliminar este proveedor y sus evaluaciones?")) return;
+  await api.del("/api/proveedor/"+ID); location.href="proveedores.html";
+}
+
+function colorClasif(c){
+  if(/excelente/i.test(c||"")) return "verde";
+  if(/bueno/i.test(c||"")) return "azul";
+  if(/regular/i.test(c||"")) return "ambar";
+  return "rojo";
+}
+function pintarEvaluaciones(){
+  const cont=document.getElementById("evaluaciones");
+  if(!DATA.evaluaciones.length){ cont.innerHTML=`<div class="vacio">Aún no hay evaluaciones.</div>`; return; }
+  cont.innerHTML=DATA.evaluaciones.map(e=>{
+    const d=e.datos;
+    return `<div class="tarea" style="padding:14px 16px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <b>${escaparHTML(d.periodo||fechaCorta(d.fecha))}</b>
+        <span class="chip ${colorClasif(d.clasificacion)}">${escaparHTML(d.clasificacion)} · ${d.total}/18</span>
+        <div class="crece"></div>
+        <span style="font-size:.8rem;color:var(--gris)">Evaluó: ${escaparHTML(e.creado_por)} · ${fechaCorta(e.creado)}</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        ${CAT.criterios_evaluacion.map(c=>`<span class="chip gris">${c.nombre}: ${d.calificaciones?.[c.id]??"—"}</span>`).join("")}
+      </div>
+      ${d.feedback?`<div class="meta" style="margin-top:6px;font-size:.85rem">Feedback al proveedor: ${escaparHTML(d.feedback)}</div>`:""}
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:.83rem">
+        ${(e.firmas||[]).filter(f=>f.firma).map(f=>`<div>✍️ ${escaparHTML(f.rol)}: <b>${escaparHTML(f.nombre||"")}</b> <img src="${f.firma}" style="height:34px;vertical-align:middle;border:1px solid var(--linea);border-radius:6px;background:#fff"></div>`).join("")}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function pintarHistorial(){
+  const cont=document.getElementById("historial");
+  if(!DATA.historial.length){ cont.innerHTML=`<div class="vacio">Sin compras registradas con este proveedor.</div>`; return; }
+  cont.className="grid";
+  cont.innerHTML=DATA.historial.map(h=>`
+    <div class="tarjeta" onclick="location.href='compra.html?id=${h.id}'">
+      <div class="cli">OC-${escaparHTML(h.folio)}</div>
+      <div class="meta">${escaparHTML(h.proyecto||"")}</div>
+      <div class="chips">
+        <span class="chip ${h.resumen.color}">${escaparHTML(h.resumen.etiqueta)}</span>
+        <span class="chip gris">${dinero(h.total,h.moneda)}</span>
+      </div>
+    </div>`).join("");
+}
+
+// ---- Nueva evaluación (FO-GDC-04) ----
+function nuevaEvaluacion(){
+  const fondo=document.createElement("div"); fondo.className="modal-fondo";
+  const anio=new Date().getFullYear(), sem=(new Date().getMonth()<6?"1er":"2do");
+  fondo.innerHTML=`<div class="modal" style="width:680px"><h2>Evaluación de proveedor (${CAT.versiones.evaluacion})</h2>
+    <div class="campos" style="grid-template-columns:1fr 1fr">
+      <div class="campo"><label>Fecha de evaluación</label><input id="ev-fecha" type="date" value="${hoyISO()}"></div>
+      <div class="campo"><label>Periodo evaluado</label><input id="ev-periodo" value="${sem} semestre ${anio}"></div>
+    </div>
+    ${CAT.criterios_evaluacion.map(c=>`<div class="eval-crit">
+      <div class="nom">${c.nombre}</div>
+      ${c.opciones.map(o=>`<label><input type="radio" name="ev-${c.id}" value="${o.p}"> <b>${o.p}</b> — ${o.t}</label>`).join("")}
+    </div>`).join("")}
+    <div class="eval-total">
+      <div class="caja">TOTAL: <span id="ev-total">0</span>/18</div>
+      <span class="chip gris" id="ev-clasif" style="font-size:.95rem;padding:8px 14px">—</span>
+    </div>
+    <div class="campo" style="margin-top:12px"><label>Feedback al proveedor (etapa 8.2 — evidencia)</label><textarea id="ev-feedback" rows="2"></textarea></div>
+    <div class="et" style="margin:12px 0 4px;font-size:.78rem;font-weight:700;color:var(--gris)">FIRMAS</div>
+    <div class="campo"><label>Responsable de compras</label><input id="ev-n1" placeholder="Nombre"></div>
+    <div class="firma-caja" data-firma="ev1" style="margin-top:6px"><canvas></canvas><div class="ph">Firma responsable de compras</div></div>
+    <div class="campo" style="margin-top:10px"><label>Director general</label><input id="ev-n2" placeholder="Nombre"></div>
+    <div class="firma-caja" data-firma="ev2" style="margin-top:6px"><canvas></canvas><div class="ph">Firma director general</div></div>
+    <div class="acciones"><button class="btn fantasma" id="ev-cancel">Cancelar</button><button class="btn verde" id="ev-ok">💾 Guardar evaluación</button></div>
+  </div>`;
+  document.body.appendChild(fondo);
+  const firmas={};
+  fondo.querySelectorAll(".firma-caja").forEach(c=>{ firmas[c.dataset.firma]=crearFirma(c); });
+  const calc=()=>{
+    let tot=0, faltan=false;
+    for(const c of CAT.criterios_evaluacion){
+      const v=fondo.querySelector(`[name="ev-${c.id}"]:checked`);
+      if(v) tot+=parseInt(v.value); else faltan=true;
+    }
+    fondo.querySelector("#ev-total").textContent=tot;
+    const cl=CAT.clasificaciones.find(x=>tot>=x.min&&tot<=x.max);
+    const chip=fondo.querySelector("#ev-clasif");
+    chip.textContent=faltan?"(faltan criterios)":(cl.nombre+" — "+cl.detalle);
+    chip.className="chip "+(faltan?"gris":(cl.color==="azul"?"azul":cl.color));
+    return {tot,faltan,cl};
+  };
+  fondo.querySelectorAll("input[type=radio]").forEach(r=>r.onchange=calc);
+  fondo.querySelector("#ev-cancel").onclick=()=>fondo.remove();
+  fondo.querySelector("#ev-ok").onclick=async()=>{
+    const {tot,faltan,cl}=calc();
+    if(faltan){ aviso("⚠️ Califica los 5 criterios"); return; }
+    const calificaciones={};
+    for(const c of CAT.criterios_evaluacion) calificaciones[c.id]=parseInt(fondo.querySelector(`[name="ev-${c.id}"]:checked`).value);
+    const fs=[
+      {rol:"Responsable de compras",nombre:fondo.querySelector("#ev-n1").value.trim(),firma:firmas.ev1.estaVacio()?"":firmas.ev1.aDataURL(),fecha:new Date().toISOString(),usuario:USUARIO.nombre},
+      {rol:"Director general",nombre:fondo.querySelector("#ev-n2").value.trim(),firma:firmas.ev2.estaVacio()?"":firmas.ev2.aDataURL(),fecha:new Date().toISOString(),usuario:USUARIO.nombre},
+    ];
+    if(!fs[0].firma){ aviso("⚠️ Falta la firma del responsable de compras"); return; }
+    const datos={fecha:fondo.querySelector("#ev-fecha").value, periodo:fondo.querySelector("#ev-periodo").value.trim(),
+      calificaciones, total:tot, clasificacion:cl.nombre, feedback:fondo.querySelector("#ev-feedback").value.trim(),
+      version:CAT.versiones.evaluacion};
+    const r=await api.post("/api/proveedor/"+ID+"/evaluacion",{datos,firmas:fs});
+    if(r.error){ aviso("⚠️ "+r.error); return; }
+    fondo.remove(); aviso("Evaluación guardada ✓"); cargar();
+  };
+}
+inicio();
+</script>
+</body>
+</html>

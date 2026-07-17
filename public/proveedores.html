@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Proveedores — Compras SGC</title>
+<meta name="theme-color" content="#13407a">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div class="barra">
+  <div class="logo" style="cursor:pointer" onclick="location.href='index.html'">← <b>DINMEC</b> <span>Catálogo de proveedores</span></div>
+  <div class="crece"></div>
+  <div class="usuario" id="usuario">…</div>
+</div>
+
+<div class="contenedor">
+  <div class="seccion-tit">
+    <h2>Proveedores <span class="chip gris" id="chipFo"></span></h2>
+    <div class="crece"></div>
+    <button class="btn primario" onclick="nuevoProveedor()">+ Nuevo proveedor</button>
+  </div>
+  <div class="filtros">
+    <input class="buscar" id="buscar" placeholder="🔎 Buscar razón social, insumo, RFC…" oninput="pintar()">
+  </div>
+  <div id="lista"></div>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let USUARIO, CAT, LISTA=[];
+async function inicio(){
+  USUARIO=await exigirSesion(); if(!USUARIO) return;
+  document.getElementById("usuario").textContent="👤 "+USUARIO.nombre;
+  CAT=await api.get("/api/catalogos");
+  document.getElementById("chipFo").textContent=CAT.versiones.catalogo;
+  await cargar();
+  if(paramURL("nuevo")) nuevoProveedor();
+}
+async function cargar(){ LISTA=await api.get("/api/proveedores"); pintar(); }
+
+function colorClasif(c){
+  if(!c) return "gris";
+  if(/excelente/i.test(c)) return "verde";
+  if(/bueno/i.test(c)) return "azul";
+  if(/regular/i.test(c)) return "ambar";
+  return "rojo";
+}
+function pintar(){
+  const q=(document.getElementById("buscar").value||"").toLowerCase();
+  const cont=document.getElementById("lista");
+  const fil=LISTA.filter(p=>!q||(p.razon_social||"").toLowerCase().includes(q)||(p.suministra||"").toLowerCase().includes(q)||(p.rfc||"").toLowerCase().includes(q));
+  if(!fil.length){ cont.className=""; cont.innerHTML=`<div class="vacio">${LISTA.length?"Sin coincidencias.":"Aún no hay proveedores en el catálogo."}<br><br><button class="btn primario" onclick="nuevoProveedor()">+ Dar de alta el primero</button></div>`; return; }
+  cont.className="grid";
+  cont.innerHTML=fil.map(p=>`
+    <div class="tarjeta" onclick="location.href='proveedor.html?id=${p.id}'">
+      <div class="cli">${escaparHTML(p.razon_social)}</div>
+      <div class="meta">Suministra: ${escaparHTML(p.suministra||"—")}</div>
+      <div class="meta">Contacto: ${escaparHTML(p.contacto||"—")} · ${escaparHTML(p.telefono||"")}</div>
+      <div class="chips">
+        <span class="chip ${p.estatus==="Restringido"?"rojo":(p.estatus==="Condicionado"?"ambar":"verde")}">${escaparHTML(p.estatus||"Aprobado")}</span>
+        ${p.ultima_eval?`<span class="chip ${colorClasif(p.ultima_eval.clasificacion)}">Eval: ${escaparHTML(p.ultima_eval.clasificacion)} (${p.ultima_eval.total}/18)</span>`:`<span class="chip gris">Sin evaluar</span>`}
+        <span class="chip gris">Crédito ${p.credito_dias||0} días</span>
+      </div>
+    </div>`).join("");
+}
+
+function nuevoProveedor(){
+  const fondo=document.createElement("div"); fondo.className="modal-fondo";
+  fondo.innerHTML=`<div class="modal" style="width:560px"><h2>Nuevo proveedor (${CAT.versiones.catalogo})</h2>
+    <p style="color:#5b6470;margin-top:-6px;font-size:.85rem">El alta de proveedores nuevos la aprueba Dirección general (PS-GDC-01, etapa 4).</p>
+    <div class="campos" style="grid-template-columns:1fr 1fr">
+      <div class="campo" style="grid-column:1/-1"><label>Razón social *</label><input id="p-razon"></div>
+      <div class="campo"><label>RFC</label><input id="p-rfc"></div>
+      <div class="campo"><label>Suministra (insumo/producto/servicio)</label><input id="p-suministra" list="tipos"><datalist id="tipos">${CAT.tipos_compra.map(t=>`<option value="${t}">`).join("")}</datalist></div>
+      <div class="campo"><label>Crédito (días)</label><input id="p-credito" type="number" value="0"></div>
+      <div class="campo"><label>Condición de pago</label><select id="p-cond">${CAT.condiciones_pago.map(c=>`<option>${c}</option>`).join("")}</select></div>
+      <div class="campo"><label>Forma de pago</label><select id="p-forma">${CAT.forma_pago.map(c=>`<option>${c}</option>`).join("")}</select></div>
+      <div class="campo"><label>Fecha de alta</label><input id="p-alta" type="date" value="${hoyISO()}"></div>
+      <div class="campo" style="grid-column:1/-1"><label>Dirección fiscal</label><input id="p-dir"></div>
+      <div class="campo"><label>Contacto</label><input id="p-contacto"></div>
+      <div class="campo"><label>Teléfono</label><input id="p-tel"></div>
+      <div class="campo" style="grid-column:1/-1"><label>Email</label><input id="p-email"></div>
+    </div>
+    <div class="acciones"><button class="btn fantasma" id="p-cancel">Cancelar</button><button class="btn primario" id="p-ok">Dar de alta</button></div>
+  </div>`;
+  document.body.appendChild(fondo);
+  fondo.querySelector("#p-cancel").onclick=()=>fondo.remove();
+  fondo.querySelector("#p-ok").onclick=async()=>{
+    const g=id=>fondo.querySelector("#"+id).value.trim();
+    if(!g("p-razon")){ aviso("⚠️ Falta la razón social"); return; }
+    const r=await api.post("/api/proveedores",{razon_social:g("p-razon"),rfc:g("p-rfc"),suministra:g("p-suministra"),
+      credito_dias:g("p-credito"),condicion_pago:g("p-cond"),forma_pago:g("p-forma"),fecha_alta:g("p-alta"),
+      direccion:g("p-dir"),contacto:g("p-contacto"),telefono:g("p-tel"),email:g("p-email")});
+    if(r.error){ aviso("⚠️ "+r.error); return; }
+    fondo.remove(); aviso("Proveedor dado de alta ✓");
+    const volver=paramURL("volver");
+    if(volver){ location.href=volver; } else cargar();
+  };
+}
+inicio();
+</script>
+</body>
+</html>

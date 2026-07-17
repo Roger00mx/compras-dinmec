@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Usuarios — Compras SGC</title>
+<meta name="theme-color" content="#13407a">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div class="barra">
+  <div class="logo" style="cursor:pointer" onclick="location.href='index.html'">← <b>DINMEC</b> <span>Usuarios</span></div>
+  <div class="crece"></div>
+  <div class="usuario" id="usuario">…</div>
+</div>
+
+<div class="contenedor">
+  <div class="seccion-tit">
+    <h2>Usuarios</h2>
+    <div class="crece"></div>
+    <button class="btn primario" onclick="nuevoUsuario()">+ Nuevo usuario</button>
+  </div>
+  <p style="color:#5b6470">Cada quien entra con su usuario y contraseña. Quien tenga rol de <b>Dirección general</b> (o sea administrador) puede autorizar requisiciones, selecciones, órdenes de compra y pagos.</p>
+  <div id="lista"></div>
+
+  <div class="seccion-tit" style="margin-top:34px"><h2>Respaldo</h2></div>
+  <div class="cabecera">
+    <p style="color:#5b6470;margin-top:0">Descarga una copia de seguridad de todos los datos (expedientes, proveedores, firmas y bitácora). Guárdala periódicamente.</p>
+    <a class="btn primario chico" href="/api/respaldo">⬇️ Descargar respaldo ahora</a>
+  </div>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let YO;
+async function inicio(){
+  YO = await exigirSesion();
+  if(!YO) return;
+  if(YO.rol_app!=="admin"){ document.querySelector(".contenedor").innerHTML="<div class='vacio'>Solo el administrador puede ver esta página.<br><br><a class='btn primario' href='index.html'>Volver</a></div>"; return; }
+  document.getElementById("usuario").textContent="👤 "+YO.nombre;
+  cargar();
+}
+
+async function cargar(){
+  const lista=await api.get("/api/usuarios");
+  const cont=document.getElementById("lista"); cont.className="grid";
+  cont.innerHTML=lista.map(u=>`
+    <div class="tarjeta" style="cursor:default">
+      <div class="cli">${escaparHTML(u.nombre)} ${u.rol_app==="admin"?'<span class="chip" style="background:#fef3d6;color:#a06a00">admin</span>':""}</div>
+      <div class="meta">Usuario: <b>${escaparHTML(u.usuario)}</b></div>
+      <div class="meta">${escaparHTML(u.rol||"")} ${/direc/i.test(u.rol||"")?'<span class="chip verde">autoriza</span>':""}</div>
+      <div class="chips" style="margin-top:8px">
+        <button class="btn fantasma chico" onclick="cambiarClave('${u.id}','${escaparHTML(u.nombre)}')">Cambiar contraseña</button>
+        ${u.usuario!==YO.usuario?`<button class="btn peligro chico" onclick="borrar('${u.id}','${escaparHTML(u.nombre)}')">Eliminar</button>`:""}
+      </div>
+    </div>`).join("");
+}
+
+function nuevoUsuario(){
+  const fondo=document.createElement("div"); fondo.className="modal-fondo";
+  fondo.innerHTML=`<div class="modal"><h2>Nuevo usuario</h2>
+    <div class="campo"><label>Nombre completo</label><input id="u-nombre" placeholder="Ej. Rosario Roque"></div>
+    <div class="campo" style="margin-top:10px"><label>Usuario (para entrar)</label><input id="u-usuario" placeholder="Ej. rosario"></div>
+    <div class="campo" style="margin-top:10px"><label>Rol / puesto (define permisos)</label><input id="u-rol" list="roles" placeholder="Empieza a escribir…"><datalist id="roles"></datalist></div>
+    <div class="campo" style="margin-top:10px"><label>Contraseña</label><input id="u-clave" type="text" placeholder="mínimo 4 caracteres"></div>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:12px;cursor:pointer"><input type="checkbox" id="u-admin"> Es administrador (crea usuarios y también autoriza)</label>
+    <div class="acciones"><button class="btn fantasma" id="u-cancel">Cancelar</button><button class="btn primario" id="u-ok">Crear</button></div>
+  </div>`;
+  document.body.appendChild(fondo);
+  api.get("/api/catalogos").then(({roles})=>{ fondo.querySelector("#roles").innerHTML=roles.map(r=>`<option value="${r}">`).join(""); });
+  fondo.querySelector("#u-cancel").onclick=()=>fondo.remove();
+  fondo.querySelector("#u-ok").onclick=async()=>{
+    const body={nombre:gv("u-nombre"),usuario:gv("u-usuario"),rol:gv("u-rol"),clave:gv("u-clave"),rol_app:fondo.querySelector("#u-admin").checked?"admin":"usuario"};
+    if(!body.usuario||body.clave.length<4){ aviso("Usuario y contraseña (4+) requeridos"); return; }
+    const r=await api.post("/api/usuarios",body);
+    if(r.ok){ fondo.remove(); aviso("Usuario creado ✓"); cargar(); } else { aviso(r.error||"Error"); }
+  };
+  function gv(id){return fondo.querySelector("#"+id).value.trim();}
+}
+
+async function cambiarClave(id,nombre){
+  const nueva=prompt("Nueva contraseña para "+nombre+" (mínimo 4 caracteres):");
+  if(nueva===null) return;
+  if(nueva.trim().length<4){ aviso("Muy corta"); return; }
+  const r=await api.put("/api/usuarios/"+id,{clave:nueva.trim()});
+  if(r.ok) aviso("Contraseña cambiada ✓"); else aviso(r.error||"Error");
+}
+async function borrar(id,nombre){
+  if(!confirm("¿Eliminar a "+nombre+"?")) return;
+  const r=await api.del("/api/usuarios/"+id);
+  if(r.ok){ aviso("Usuario eliminado"); cargar(); } else aviso(r.error||"Error");
+}
+inicio();
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+# Configuración automática para Render.com (https://render.com)
+# Con este archivo, Render crea el servicio y el disco persistente solos.
+services:
+  - type: web
+    name: compras-dinmec
+    runtime: node
+    plan: starter            # plan con disco persistente (~$7 USD/mes)
+    region: oregon
+    buildCommand: npm install
+    startCommand: node server.js
+    autoDeploy: true
+    envVars:
+      - key: DIR_DATOS
+        value: /datos         # la app guardará base de datos y archivos aquí
+      - key: NODE_VERSION
+        value: "24"
+    disk:
+      name: datos-compras
+      mountPath: /datos       # disco que NO se borra al reiniciar
+      sizeGB: 1
