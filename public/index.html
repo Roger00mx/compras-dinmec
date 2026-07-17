@@ -104,7 +104,8 @@ function pintar(){
   }
   cont.className="grid";
   cont.innerHTML=filtradas.map(c=>`
-    <div class="tarjeta" onclick="location.href='compra.html?id=${c.id}'">
+    <div class="tarjeta" style="position:relative" onclick="location.href='compra.html?id=${c.id}'">
+      ${USUARIO.rol_app==="admin"?`<button title="Eliminar expediente" onclick="event.stopPropagation();borrarCompra('${c.id}','${escaparHTML(c.folio)}')" style="position:absolute;top:10px;right:10px;background:#fdeaea;color:#d23f3f;border:none;border-radius:8px;width:28px;height:28px;cursor:pointer;font-weight:700">🗑</button>`:""}
       <div class="cli">REQ-${escaparHTML(c.folio)}</div>
       <div class="meta">${c.destino==="INTERNA DINMEC"?"Uso interno DINMEC":(escaparHTML(c.proyecto||"(Sin proyecto)")+" "+(c.cliente?("· "+escaparHTML(c.cliente)):""))}</div>
       <div class="chips">
@@ -154,22 +155,16 @@ function nuevaCompra(){
   };
 }
 
+async function borrarCompra(id, folio){
+  if(!confirm("¿Eliminar el expediente REQ-"+folio+" y TODO lo capturado (secciones, firmas y adjuntos)?\n\nEsta acción no se puede deshacer.")) return;
+  const r=await api.del("/api/compra/"+id);
+  if(r.error){ aviso("⚠️ "+r.error); return; }
+  aviso("Expediente REQ-"+folio+" eliminado");
+  cargar();
+}
+
 function mostrarDireccion(){
   const url = location.origin;
   const fondo=document.createElement("div"); fondo.className="modal-fondo";
   fondo.innerHTML=`<div class="modal"><h2>📲 Compartir acceso</h2>
-    <p style="color:#5b6470">Para que tus compañeros entren desde su celular o PC, comparte esta dirección:</p>
-    <div style="background:#eef4fc;border:1.5px solid #cfe0f5;border-radius:10px;padding:14px;text-align:center;font-size:1.3rem;font-weight:700;color:#13407a;word-break:break-all">${url}</div>
-    <div class="acciones">
-      <button class="btn fantasma" id="d-copiar">Copiar dirección</button>
-      <button class="btn primario" id="d-ok">Listo</button>
-    </div></div>`;
-  document.body.appendChild(fondo);
-  fondo.querySelector("#d-ok").onclick=()=>fondo.remove();
-  fondo.querySelector("#d-copiar").onclick=()=>{ navigator.clipboard?.writeText(url); aviso("Dirección copiada"); };
-}
-
-inicio();
-</script>
-</body>
-</html>
+    <p style="color:#5b6470

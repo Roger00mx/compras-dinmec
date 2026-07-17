@@ -371,10 +371,24 @@ const servidor = http.createServer(async (req, res) => {
     }
     if (mCompra && req.method === "PUT") {
       const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
-      db.prepare("UPDATE compras SET proyecto=?,cliente=?,clase=?,destino=?,actualizado=?,actualizado_por=? WHERE id=?")
-        .run(b.proyecto || "", b.cliente || "", b.clase || "Directa", b.destino || "proyecto", ahora(), yo.nombre, mCompra[1]);
+      const actual = db.prepare("SELECT folio FROM compras WHERE id=?").get(mCompra[1]);
+      if (!actual) return json(res, 404, { error: "Expediente no encontrado" });
+      let folio = actual.folio;
+      // Cambiar el folio: solo administrador (para empatar con el consecutivo en papel)
+      if (b.folio !== undefined && String(b.folio).trim() !== actual.folio) {
+        if (yo.rol_app !== "admin") return json(res, 403, { error: "Solo el administrador puede cambiar el folio" });
+        const m = String(b.folio).trim().match(/^(\d{4})-(\d{1,4})$/);
+        if (!m) return json(res, 400, { error: "Folio inválido. Usa el formato AAAA-número, ej. 2026-045" });
+        const nuevo = m[1] + "-" + String(parseInt(m[2], 10)).padStart(3, "0");
+        const dup = db.prepare("SELECT id FROM compras WHERE folio=? AND id<>?").get(nuevo, mCompra[1]);
+        if (dup) return json(res, 409, { error: "Ya existe otro expediente con el folio " + nuevo });
+        folio = nuevo;
+        registrarBitacora(mCompra[1], yo.nombre, "Cambio de folio", actual.folio + " → " + nuevo);
+      }
+      db.prepare("UPDATE compras SET folio=?,proyecto=?,cliente=?,clase=?,destino=?,actualizado=?,actualizado_por=? WHERE id=?")
+        .run(folio, b.proyecto || "", b.cliente || "", b.clase || "Directa", b.destino || "proyecto", ahora(), yo.nombre, mCompra[1]);
       avisarCambio(mCompra[1], "cabecera");
-      return json(res, 200, { ok: true });
+      return json(res, 200, { ok: true, folio });
     }
     if (mCompra && req.method === "DELETE") {
       if (yo.rol_app !== "admin") return json(res, 403, { error: "Solo administrador puede eliminar expedientes" });

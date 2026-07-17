@@ -30,6 +30,7 @@
   <!-- Cabecera del expediente -->
   <div class="cabecera">
     <div class="campos">
+      <div class="campo" id="caja-folio" style="display:none"><label>Folio REQ- (solo admin)</label><input id="c-folio" placeholder="ej. 2026-045"></div>
       <div class="campo"><label>Destino de la compra</label>
         <select id="c-destino" onchange="alternarDestino()">
           <option value="proyecto">Para proyecto / cliente</option>
@@ -90,6 +91,7 @@ function pintarCabecera(){
   document.getElementById("titulo").textContent="REQ-"+c.folio+(c.destino==="INTERNA DINMEC"?" · INTERNA":"");
   const chip=document.getElementById("chipEstado");
   chip.textContent=r.etiqueta; chip.className="chip "+r.color;
+  if(USUARIO.rol_app==="admin"){ document.getElementById("caja-folio").style.display=""; document.getElementById("c-folio").value=c.folio||""; }
   document.getElementById("c-destino").value=c.destino==="INTERNA DINMEC"?"INTERNA DINMEC":"proyecto";
   document.getElementById("c-proyecto").value=c.proyecto||"";
   document.getElementById("c-cliente").value=c.cliente||"";
@@ -103,8 +105,12 @@ function alternarDestino(){
 }
 async function guardarCabecera(){
   const interna=gv("c-destino")==="INTERNA DINMEC";
-  await api.put("/api/compra/"+ID,{destino:gv("c-destino"),proyecto:interna?"":gv("c-proyecto"),cliente:interna?"":gv("c-cliente"),clase:gv("c-clase")});
-  DATA.compra.destino=gv("c-destino");
+  const body={destino:gv("c-destino"),proyecto:interna?"":gv("c-proyecto"),cliente:interna?"":gv("c-cliente"),clase:gv("c-clase")};
+  if(USUARIO.rol_app==="admin" && gv("c-folio")) body.folio=gv("c-folio");
+  const r=await api.put("/api/compra/"+ID, body);
+  if(r.error){ aviso("⚠️ "+r.error); return; }
+  DATA.compra={...DATA.compra,...body, folio:r.folio||DATA.compra.folio};
+  pintarCabecera();
   aviso("Datos guardados ✓");
 }
 async function eliminarExpediente(){
@@ -779,15 +785,3 @@ async function quitarFactura(i){
   await guardarSeccion("cxp", d, [], "Factura eliminada");
 }
 
-// ================= Bitácora =================
-async function cargarBitacora(){
-  const lista=await api.get("/api/bitacora/"+ID);
-  document.getElementById("bitacora").innerHTML=lista.length?lista.map(b=>
-    `<div class="bit"><b>${escaparHTML(b.usuario)}</b> · ${escaparHTML(b.accion)} — ${escaparHTML(b.detalle)}<div class="f">${new Date(b.fecha).toLocaleString("es-MX")}</div></div>`
-  ).join(""):`<span style="color:var(--gris)">Sin movimientos aún.</span>`;
-}
-
-inicio();
-</script>
-</body>
-</html>
