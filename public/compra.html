@@ -13,7 +13,7 @@
 </head>
 <body>
 <div class="barra">
-  <div class="logo" style="cursor:pointer" onclick="location.href='index.html'">← <b>DINMEC</b> <span>Compras SGC</span></div>
+  <div class="logo" style="cursor:pointer" onclick="location.href='index.html'">← <img src="/logo.png" alt="DINMEC" class="logo-img" onerror="this.outerHTML='<b>DINMEC</b>'"> <span>Compras SGC</span></div>
   <div class="crece"></div>
   <div class="envivo"><i></i> En vivo</div>
   <div class="usuario" id="usuario">…</div>
@@ -56,6 +56,7 @@
 <script>
 let USUARIO, ID=paramURL("id"), DATA, CAT, PROVS=[];
 const firmasVivas={};
+let corrigiendoReq=false; // modo corrección de captura (admin/dirección)
 
 // ------- Definición de las 5 secciones (mismo patrón que las tareas de la hoja viajera) -------
 const SECS=[
@@ -250,7 +251,7 @@ function construirRequisicion(){
   const d=sec("requisicion").datos, fs=sec("requisicion").firmas;
   const cuerpo=document.getElementById("cuerpo-requisicion");
   const bloqueado = d.estado==="autorizada" || d.estado==="solicitada";
-  const editable = !bloqueado;
+  const editable = !bloqueado || corrigiendoReq;
   const partidas=(d.partidas&&d.partidas.length)?d.partidas:[{},{},{}];
   const fSol=firmaParaPintar("requisicion","requisicion__sol", fs[0]||{rol:"Solicitante"});
   const fAut=firmaParaPintar("requisicion","requisicion__aut", fs[1]||{rol:"Autorización (Dirección general)"});
@@ -279,7 +280,11 @@ function construirRequisicion(){
       ${d.estado==="solicitada"||d.estado==="autorizada"?firmaHTML("requisicion__aut", fAut, d.estado==="autorizada"):""}
     </div>
     <div class="tarea-pie">
-      ${editable?`<button class="btn" onclick="guardarReq('')">💾 Guardar borrador</button>
+      ${corrigiendoReq?`<span class="candado" style="margin:0">✏️ Corrigiendo captura — el estado y las firmas no cambian</span>
+        <button class="btn fantasma" onclick="corrigiendoReq=false;construirRequisicion()">Cancelar</button>
+        <button class="btn verde" onclick="guardarCorreccionReq()">💾 Guardar corrección</button>`:""}
+      ${bloqueado&&!corrigiendoReq&&(USUARIO.rol_app==="admin"||USUARIO.autoriza)?`<button class="btn fantasma" onclick="corrigiendoReq=true;construirRequisicion()">✏️ Corregir captura</button>`:""}
+      ${editable&&!corrigiendoReq?`<button class="btn" onclick="guardarReq('')">💾 Guardar borrador</button>
         <button class="btn primario" onclick="guardarReq('solicitada')">📨 Enviar a autorización</button>`:""}
       ${d.estado==="solicitada"&&USUARIO.autoriza?`
         <button class="btn peligro" onclick="rechazarReq()">✗ Rechazar</button>
@@ -337,6 +342,14 @@ async function guardarReq(nuevoEstado){
   } else if(nuevoEstado===""&&(d.estado==="rechazada"||!d.estado)){ d.estado=""; }
   await guardarSeccion("requisicion", d, [fSol,fAut],
     nuevoEstado==="solicitada"?"Requisición enviada a autorización ✓":(nuevoEstado==="autorizada"?"Requisición autorizada ✓":"Guardado ✓"));
+}
+async function guardarCorreccionReq(){
+  const d={...sec("requisicion").datos};
+  d.fecha_requerida=gv("r-fecha_requerida"); d.tipo_compra=gv("r-tipo"); d.observaciones=gv("r-obs");
+  d.partidas=leerPartidasReq();
+  if(!d.partidas.length){ aviso("⚠️ Captura al menos una partida"); return; }
+  corrigiendoReq=false;
+  await guardarSeccion("requisicion", d, sec("requisicion").firmas, "Corrección guardada ✓ (queda registrada en la bitácora)");
 }
 async function rechazarReq(){
   const motivo=prompt("Motivo del rechazo (obligatorio, se notifica al solicitante):");

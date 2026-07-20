@@ -60,7 +60,7 @@ async function inicio(){
 
   function cab(titulo, fo){
     return `<div class="doc-cab">
-      <div><div class="marca">DINMEC</div><div style="font-size:.78rem;color:var(--gris)">DINMEC SOLUTIONS S DE RL DE CV · Sistema de Gestión de Calidad</div></div>
+      <div><img src="/logo.png" alt="DINMEC" style="height:46px" onerror="this.outerHTML='<div class=marca>DINMEC</div>'"><div style="font-size:.78rem;color:var(--gris)">DINMEC GROUP SRL DE CV · Sistema de Gestión de Calidad</div></div>
       <div class="fo"><b>${titulo}</b>${fo}<br>Folio: ${titulo.startsWith("ORDEN")?"OC":"REQ"}-${e(c.folio)}</div>
     </div>`;
   }

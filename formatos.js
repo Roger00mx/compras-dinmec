@@ -50,7 +50,7 @@ const IVA_PORC = 16;
 
 // Datos de facturación de DINMEC (encabezado del FO-GDC-02)
 const FACTURACION = {
-  razon: "ROGELIO RIVERA ROJAS",
+  razon: "DINMEC GROUP SRL DE CV",
   direccion1: "CALLE 10 PONIENTE No. 506-C, COL CENTRO",
   direccion2: "SAN PEDRO CHOLULA, PUE.  C.P. 72760",
   rfc: "RIRR-811007-3T1",

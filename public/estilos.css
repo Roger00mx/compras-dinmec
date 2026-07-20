@@ -189,3 +189,17 @@ h1,h2,h3{margin:0 0 .4em}
 .venc-rojo{color:var(--rojo);font-weight:700}
 .venc-ambar{color:#a06a00;font-weight:700}
 @media(max-width:600px){ .ptabla{font-size:.8rem} }
+
+/* ============ Colores corporativos DINMEC (logo: azul metálico + naranja + rojo) ============ */
+:root{
+  --azul:#1d3050; --azul-claro:#2e5e97; --azul-bg:#eef3fa;
+  --naranja:#ef7d17; --rojo-corp:#c9282d;
+}
+.barra{background:linear-gradient(90deg,#152438,#1d3050)}
+.btn.primario{background:var(--naranja)}
+.btn.primario:hover{filter:brightness(1.06)}
+.pestana.activa{color:var(--naranja)}
+.tarea-no{background:#fdeedd;color:#c96a08}
+.barraprog > i{background:var(--naranja)}
+.filtro.activo{background:var(--naranja);border-color:var(--naranja)}
+.logo-img{height:26px;background:#fff;border-radius:6px;padding:2px 5px}
