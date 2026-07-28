@@ -53,6 +53,7 @@ async function inicio(){
   document.getElementById("usuario").textContent = "👤 " + USUARIO.nombre;
   await cargar();
   conectarEnVivo(()=>cargar());
+  if(paramURL("nueva")) nuevaCompra();
 }
 
 function menuUsuario(){
@@ -113,6 +114,7 @@ function pintar(){
       <div class="fr-der">
         ${c.destino==="INTERNA DINMEC"?`<span class="chip azul">INTERNA</span>`:""}
         <span class="chip ${c.resumen.color}">${escaparHTML(c.resumen.etiqueta)}</span>
+        <button class="fr-abrir" onclick="event.stopPropagation();location.href='compra.html?id=${c.id}'">✏️ Abrir</button>
         ${USUARIO.rol_app==="admin"?`<button class="fr-borrar" title="Eliminar expediente" onclick="event.stopPropagation();borrarCompra('${c.id}','${escaparHTML(c.folio)}')">🗑</button>`:""}
       </div>
     </div>`).join("");

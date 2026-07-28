@@ -15,6 +15,8 @@
 <div class="barra">
   <div class="logo" style="cursor:pointer" onclick="location.href='index.html'">← <img src="/logo.png" alt="DINMEC" class="logo-img" onerror="this.outerHTML='<b>DINMEC</b>'"> <span>Compras SGC</span></div>
   <div class="crece"></div>
+  <button class="btn chico" style="background:rgba(255,255,255,.16);color:#fff;border:none" onclick="location.href='index.html'">🏠 INICIO</button>
+  <button class="btn chico" style="background:var(--naranja);color:#fff;border:none" onclick="location.href='index.html?nueva=1'">➕ NVA REQUISICIÓN</button>
   <div class="envivo"><i></i> En vivo</div>
   <div class="usuario" id="usuario">…</div>
 </div>
@@ -387,6 +389,7 @@ function construirSeleccion(){
         <button class="btn fantasma chico" onclick="location.href='proveedores.html?nuevo=1&volver='+encodeURIComponent('compra.html?id='+ID)">🏭 Dar de alta proveedor nuevo</button>
       </div>`}
     </div>
+    <div class="bloque" id="s-comparativo"></div>
     <div class="bloque"><div class="et">Justificación si hay menos de 3 cotizaciones</div>
       <textarea id="s-justificacion" rows="2" ${bloqueado?"readonly":""} placeholder="Explica la razón (regla del FO-GDC-03)…">${escaparHTML(d.justificacion||"")}</textarea>
     </div>
@@ -401,70 +404,175 @@ function construirSeleccion(){
       ${!bloqueado&&!USUARIO.autoriza?`<span class="candado">La aprobación final la da Dirección general</span>`:""}
     </div>`;
   activarFirmas(cuerpo);
-  cuerpo.querySelectorAll("[data-c='proveedor_id']").forEach(s=>s.addEventListener("change",e=>{
-    const p=provDe(e.target.value); const caja=e.target.closest(".cotiz");
-    caja.querySelector("[data-cinfo]").textContent=p?((p.contacto||"—")+" · "+(p.telefono||"—")+" · Crédito "+(p.credito_dias||0)+" días"):"";
-  }));
-  cuerpo.querySelectorAll(".cotiz input[data-c='subtotal'],.cotiz input[data-c='descuento']").forEach(i=>i.addEventListener("input",e=>calcCot(e.target.closest(".cotiz"))));
+  activarEventosSel();
+  comparativo();
+}
+function productosDesdeReq(){
+  return (sec("requisicion").datos.partidas||[]).map(p=>({cantidad:p.cantidad||"",unidad:p.unidad||"",descripcion:p.descripcion||"",precio:"",importe:"",seleccionado:false}));
+}
+function filaCot(pr,e){
+  return `<tr>
+    <td style="text-align:center"><input type="checkbox" data-p="sel" title="Comprar este producto a este proveedor" ${pr.seleccionado?"checked":""} ${e?"":"disabled"} style="width:17px;height:17px"></td>
+    <td><input data-p="cantidad" type="number" step="any" value="${escaparHTML(pr.cantidad??"")}" ${e?"":"readonly"}></td>
+    <td>${e?`<select data-p="unidad">${opciones([""].concat(CAT.unidades),pr.unidad)}</select>`:`<input value="${escaparHTML(pr.unidad||"")}" readonly>`}</td>
+    <td><textarea data-p="descripcion" rows="1" ${e?"":"readonly"}>${escaparHTML(pr.descripcion||"")}</textarea></td>
+    <td><input data-p="precio" type="number" step="any" value="${escaparHTML(pr.precio??"")}" ${e?"":"readonly"}></td>
+    <td><input data-p="importe" readonly value="${escaparHTML(pr.importe??"")}"></td>
+    ${e?`<td><button class="quitar" onclick="var d=this.closest('.cotiz');this.closest('tr').remove();calcCotN(parseInt(d.dataset.i));comparativo()">×</button></td>`:""}
+  </tr>`;
 }
 function cotizacionHTML(c,i,e){
   const p=provDe(c.proveedor_id);
   const cri=CAT.criterios_seleccion;
-  return `<div class="cotiz ${c.seleccionado?"elegida":""}" data-i="${i}">
-    <div class="num-cot">Cotización ${i+1}${c.seleccionado?" · ✔ SELECCIONADO":""}</div>
+  const productos=(c.productos&&c.productos.length)?c.productos:productosDesdeReq();
+  const tieneSel=productos.some(x=>x.seleccionado);
+  return `<div class="cotiz ${tieneSel?"elegida":""}" data-i="${i}" data-pid="${escaparHTML(c.proveedor_id||"")}">
+    <div class="num-cot">Cotización ${i+1}</div>
     <div class="campos" style="margin-top:8px">
       <div class="campo" style="grid-column:1/-1"><label>Proveedor (del catálogo FO-GDC-05)</label>
         ${e?`<select data-c="proveedor_id">${opcionesProv(c.proveedor_id)}</select>`:`<input value="${escaparHTML(p?p.razon_social:"")}" readonly>`}
         <div data-cinfo style="font-size:.78rem;color:var(--gris);margin-top:3px">${p?((p.contacto||"—")+" · "+(p.telefono||"—")+" · Crédito "+(p.credito_dias||0)+" días"):""}</div>
       </div>
-      <div class="campo" style="grid-column:1/-1"><label>Descripción del insumo, producto o servicio</label><input data-c="descripcion" value="${escaparHTML(c.descripcion||"")}" ${e?"":"readonly"}></div>
-      <div class="campo"><label>Unidad</label>${e?`<select data-c="unidad">${opciones([""].concat(CAT.unidades),c.unidad)}</select>`:`<input value="${escaparHTML(c.unidad||"")}" readonly>`}</div>
-      <div class="campo"><label>Cantidad</label><input data-c="cantidad" type="number" step="any" value="${escaparHTML(c.cantidad??"")}" ${e?"":"readonly"}></div>
-      <div class="campo"><label>Sub total</label><input data-c="subtotal" type="number" step="any" value="${escaparHTML(c.subtotal??"")}" ${e?"":"readonly"}></div>
+    </div>
+    <div class="et" style="margin-top:10px;font-size:.75rem;color:var(--gris);font-weight:700">PRODUCTOS COTIZADOS CON ESTE PROVEEDOR — marca ✔ los que le COMPRARÁS</div>
+    <div class="ptabla-scroll"><table class="ptabla"><thead>
+      <tr><th style="width:36px">✔</th><th style="width:80px">Cantidad</th><th style="width:95px">Unidad</th><th>Descripción</th><th style="width:110px">Precio unitario</th><th style="width:110px">Importe</th>${e?'<th style="width:30px"></th>':""}</tr></thead>
+      <tbody>${productos.map(pr=>filaCot(pr,e)).join("")}</tbody></table></div>
+    ${e?`<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+      <button class="btn fantasma chico" onclick="agregarFilaCot(${i})">+ Producto</button>
+      <button class="btn fantasma chico" onclick="recargarProductosCot(${i})">⤵ Recargar productos de la requisición</button>
+    </div>`:""}
+    <div class="campos" style="margin-top:8px">
+      <div class="campo"><label>Sub total (auto)</label><input data-c="subtotal" readonly value="${escaparHTML(c.subtotal??"")}"></div>
       <div class="campo"><label>Descuento</label><input data-c="descuento" type="number" step="any" value="${escaparHTML(c.descuento??"")}" ${e?"":"readonly"}></div>
-      <div class="campo"><label>IVA (auto ${CAT.iva}%)</label><input data-c="iva" type="number" step="any" value="${escaparHTML(c.iva??"")}" readonly></div>
-      <div class="campo"><label>Total</label><input data-c="total" type="number" value="${escaparHTML(c.total??"")}" readonly style="font-weight:700"></div>
+      <div class="campo"><label>IVA (auto ${CAT.iva}%)</label><input data-c="iva" readonly value="${escaparHTML(c.iva??"")}"></div>
+      <div class="campo"><label>Total</label><input data-c="total" readonly value="${escaparHTML(c.total??"")}" style="font-weight:700"></div>
+    </div>
+    <div class="et" style="margin-top:8px;font-size:.75rem;color:var(--gris);font-weight:700">COTIZACIÓN DEL PROVEEDOR (PDF o foto del correo)</div>
+    <div class="adj-grid" data-adjcot="${i}">
+      ${c.proveedor_id?DATA.archivos.filter(a=>a.seccion==="cot:"+c.proveedor_id).map(a=>`<div class="adj-item">📎 <a href="${a.url}" target="_blank">${escaparHTML(a.nombre)}</a>${e?`<button onclick="borrarAdjuntoCot('${a.id}',this)" title="Quitar">×</button>`:""}</div>`).join(""):""}
+      ${e?`<label class="adj-add">📎 Adjuntar cotización<input type="file" accept=".pdf,.xml,.jpg,.jpeg,.png,.webp" onchange="subirAdjuntoCot(event,${i})"></label>`:""}
     </div>
     <div class="et" style="margin-top:8px;font-size:.75rem;color:var(--gris);font-weight:700">CRITERIOS QUE CUMPLE</div>
     <div class="criterios">${cri.map(cr=>`<label><input type="checkbox" data-cri="${cr}" ${(c.criterios||[]).includes(cr)?"checked":""} ${e?"":"disabled"}>${cr}</label>`).join("")}</div>
-    <div style="display:flex;justify-content:space-between;margin-top:10px;align-items:center">
-      <label style="display:flex;gap:7px;align-items:center;font-weight:700;cursor:pointer;color:var(--verde)">
-        <input type="checkbox" data-sel ${c.seleccionado?"checked":""} ${e?"":"disabled"} style="width:17px;height:17px"> Producto seleccionado con este proveedor
-      </label>
-      ${e?`<button class="btn peligro chico" onclick="this.closest('.cotiz').remove()">Quitar</button>`:""}
-    </div>
+    ${e?`<div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn peligro chico" onclick="this.closest('.cotiz').remove();comparativo()">Quitar cotización</button></div>`:""}
   </div>`;
 }
-function calcCot(caja){
-  const g=k=>parseFloat(caja.querySelector(`[data-c="${k}"]`)?.value)||0;
-  const base=g("subtotal")-g("descuento");
-  const iva=Math.round(base*CAT.iva)/100;
-  caja.querySelector('[data-c="iva"]').value=iva.toFixed(2);
-  caja.querySelector('[data-c="total"]').value=(base+iva).toFixed(2);
+async function subirAdjuntoCot(ev,i){
+  const caja=document.querySelector(`.cotiz[data-i="${i}"]`);
+  const pid=caja.querySelector('[data-c="proveedor_id"]')?.value||caja.dataset.pid||"";
+  if(!pid){ aviso("⚠️ Primero elige el proveedor de esta cotización"); ev.target.value=""; return; }
+  const file=ev.target.files[0]; if(!file) return;
+  aviso("Subiendo cotización…");
+  const buf=await file.arrayBuffer();
+  const q=new URLSearchParams({seccion:"cot:"+pid, nombre:file.name});
+  const r=await fetch("/api/compra/"+ID+"/archivo?"+q,{method:"POST",headers:{"Content-Type":"application/octet-stream"},body:buf}).then(x=>x.json());
+  if(r.error){ aviso("⚠️ "+r.error); return; }
+  DATA.archivos.push(r);
+  caja.querySelector(`[data-adjcot="${i}"]`).insertAdjacentHTML("afterbegin",
+    `<div class="adj-item">📎 <a href="${r.url}" target="_blank">${escaparHTML(r.nombre)}</a><button onclick="borrarAdjuntoCot('${r.id}',this)" title="Quitar">×</button></div>`);
+  ev.target.value="";
+  aviso("Cotización adjuntada ✓");
+}
+async function borrarAdjuntoCot(id,btn){
+  if(!confirm("¿Quitar este archivo?")) return;
+  await api.del("/api/archivo/"+id);
+  DATA.archivos=DATA.archivos.filter(a=>a.id!==id);
+  btn.closest(".adj-item").remove();
+}
+function calcCotN(i){
+  const caja=document.querySelector(`.cotiz[data-i="${i}"]`); if(!caja) return;
+  let sub=0;
+  caja.querySelectorAll("tbody tr").forEach(tr=>{
+    const c=parseFloat(tr.querySelector('[data-p="cantidad"]')?.value)||0;
+    const pr=parseFloat(tr.querySelector('[data-p="precio"]')?.value)||0;
+    const imp=c*pr; const el=tr.querySelector('[data-p="importe"]'); if(el) el.value=imp?imp.toFixed(2):"";
+    sub+=imp;
+  });
+  const desc=parseFloat(caja.querySelector('[data-c="descuento"]')?.value)||0;
+  const iva=Math.round((sub-desc)*CAT.iva)/100;
+  const setV=(k,v)=>{const el=caja.querySelector(`[data-c="${k}"]`); if(el) el.value=v;};
+  setV("subtotal",sub.toFixed(2)); setV("iva",iva.toFixed(2)); setV("total",(sub-desc+iva).toFixed(2));
+}
+function comparativo(){
+  const cont=document.getElementById("s-comparativo"); if(!cont) return;
+  const cajas=[...document.querySelectorAll("#s-cotizaciones .cotiz")];
+  const nombres=cajas.map((cj,x)=>{
+    const pid=cj.querySelector('[data-c="proveedor_id"]')?.value||cj.dataset.pid||"";
+    const p=provDe(pid); return p?p.razon_social:("Cotización "+(x+1));
+  });
+  const mapa={};
+  cajas.forEach((cj,ci)=>{
+    cj.querySelectorAll("tbody tr").forEach(tr=>{
+      const de=(tr.querySelector('[data-p="descripcion"]')?.value||"").trim(); if(!de) return;
+      const precio=parseFloat(tr.querySelector('[data-p="precio"]')?.value);
+      const sel=!!tr.querySelector('[data-p="sel"]')?.checked;
+      (mapa[de]=mapa[de]||{})[ci]={precio:isNaN(precio)?null:precio, sel};
+    });
+    cj.classList.toggle("elegida", [...cj.querySelectorAll('[data-p="sel"]')].some(x=>x.checked));
+  });
+  const filas=Object.keys(mapa);
+  if(!filas.length||cajas.length<2){ cont.innerHTML=""; return; }
+  cont.innerHTML=`<div class="et">COMPARATIVO DE PRECIOS UNITARIOS (verde = más barato · ✔ = lo que comprarás)</div>
+    <div class="ptabla-scroll"><table class="ptabla"><thead><tr><th>Producto</th>${nombres.map(n=>`<th>${escaparHTML(n)}</th>`).join("")}</tr></thead>
+    <tbody>${filas.map(de=>{
+      const vals=cajas.map((_,ci)=>(mapa[de]||{})[ci]);
+      const precios=vals.filter(v=>v&&v.precio!=null).map(v=>v.precio);
+      const min=precios.length?Math.min(...precios):null;
+      return `<tr><td>${escaparHTML(de)}</td>${vals.map(v=>{
+        if(!v||v.precio==null) return `<td style="color:var(--gris)">—</td>`;
+        const esMin=min!=null&&v.precio===min;
+        return `<td style="${esMin?"background:var(--verde-bg);font-weight:700;color:var(--verde);":""}">${dinero(v.precio)}${v.sel?" ✔":""}</td>`;
+      }).join("")}</tr>`;
+    }).join("")}</tbody></table></div>`;
+}
+function agregarFilaCot(i){
+  const tb=document.querySelector(`.cotiz[data-i="${i}"] tbody`);
+  tb.insertAdjacentHTML("beforeend", filaCot({},true));
+  activarEventosCaja(tb.closest(".cotiz"));
+}
+function recargarProductosCot(i){
+  const tb=document.querySelector(`.cotiz[data-i="${i}"] tbody`);
+  tb.innerHTML=productosDesdeReq().map(pr=>filaCot(pr,true)).join("");
+  activarEventosCaja(tb.closest(".cotiz")); calcCotN(i); comparativo();
+  aviso("Productos de la requisición cargados ✓");
 }
 function agregarCotizacion(){
   const cont=document.getElementById("s-cotizaciones");
-  const div=document.createElement("div"); div.innerHTML=cotizacionHTML({},cont.children.length,true);
-  cont.appendChild(div.firstElementChild);
-  construirSeleccionEventos();
+  const idx=Math.max(-1,...[...cont.querySelectorAll(".cotiz")].map(x=>parseInt(x.dataset.i)))+1;
+  cont.insertAdjacentHTML("beforeend", cotizacionHTML({},idx,true));
+  activarEventosCaja(cont.lastElementChild);
 }
-function construirSeleccionEventos(){
-  const cuerpo=document.getElementById("cuerpo-seleccion");
-  cuerpo.querySelectorAll("[data-c='proveedor_id']").forEach(s=>{ s.onchange=e=>{
-    const p=provDe(e.target.value); const caja=e.target.closest(".cotiz");
+function activarEventosCaja(caja){
+  const i=parseInt(caja.dataset.i);
+  const selProv=caja.querySelector('[data-c="proveedor_id"]');
+  if(selProv) selProv.onchange=e=>{
+    const p=provDe(e.target.value);
     caja.querySelector("[data-cinfo]").textContent=p?((p.contacto||"—")+" · "+(p.telefono||"—")+" · Crédito "+(p.credito_dias||0)+" días"):"";
-  };});
-  cuerpo.querySelectorAll(".cotiz input[data-c='subtotal'],.cotiz input[data-c='descuento']").forEach(i=>{ i.oninput=e=>calcCot(e.target.closest(".cotiz")); });
+    comparativo();
+  };
+  caja.querySelectorAll('[data-p="cantidad"],[data-p="precio"],[data-c="descuento"]').forEach(x=>{ x.oninput=()=>{ calcCotN(i); comparativo(); }; });
+  caja.querySelectorAll('[data-p="sel"]').forEach(x=>{ x.onchange=()=>comparativo(); });
+  caja.querySelectorAll('[data-p="descripcion"]').forEach(x=>{ x.oninput=()=>comparativo(); });
+}
+function activarEventosSel(){
+  document.querySelectorAll("#s-cotizaciones .cotiz").forEach(caja=>activarEventosCaja(caja));
 }
 function leerCotizaciones(){
   const out=[];
   document.querySelectorAll("#s-cotizaciones .cotiz").forEach(caja=>{
     const g=k=>caja.querySelector(`[data-c="${k}"]`)?.value?.trim()||"";
-    const c={proveedor_id:g("proveedor_id"),descripcion:g("descripcion"),unidad:g("unidad"),cantidad:g("cantidad"),
+    const productos=[];
+    caja.querySelectorAll("tbody tr").forEach(tr=>{
+      const gp=k=>tr.querySelector(`[data-p="${k}"]`)?.value?.trim()||"";
+      const pr={cantidad:gp("cantidad"),unidad:gp("unidad"),descripcion:gp("descripcion"),precio:gp("precio"),importe:gp("importe"),seleccionado:!!tr.querySelector('[data-p="sel"]')?.checked};
+      if(pr.descripcion||pr.precio) productos.push(pr);
+    });
+    const c={proveedor_id:g("proveedor_id")||caja.dataset.pid||"", productos,
       subtotal:g("subtotal"),descuento:g("descuento"),iva:g("iva"),total:g("total"),
       criterios:[...caja.querySelectorAll("[data-cri]:checked")].map(x=>x.dataset.cri),
-      seleccionado:!!caja.querySelector("[data-sel]")?.checked};
-    if(c.proveedor_id||c.descripcion||c.subtotal) out.push(c);
+      seleccionado:productos.some(p=>p.seleccionado)};
+    if(c.proveedor_id||productos.length) out.push(c);
   });
   return out;
 }
@@ -478,7 +586,7 @@ async function guardarSel(aprobar){
   if(aprobar){
     const elegidas=d.cotizaciones.filter(c=>c.seleccionado);
     if(!d.cotizaciones.length){ aviso("⚠️ Captura al menos una cotización"); return; }
-    if(!elegidas.length){ aviso("⚠️ Marca al menos un producto/proveedor como seleccionado"); return; }
+    if(!elegidas.length){ aviso("⚠️ Marca ✔ al menos un producto a comprar en alguna cotización"); return; }
     if(elegidas.some(c=>!c.proveedor_id)){ aviso("⚠️ Toda cotización seleccionada debe tener proveedor del catálogo"); return; }
     if(d.cotizaciones.length<3 && !d.justificacion){ aviso("⚠️ Con menos de 3 cotizaciones la justificación es obligatoria (FO-GDC-03)"); return; }
     if(!fEla.firma||!fApr.firma){ aviso("⚠️ Se requieren ambas firmas (Elaboró y Aprobó)"); return; }
@@ -609,11 +717,17 @@ function generarOCs(){
   for(const pid of provsSel){
     if(ordenes.some(o=>o.proveedor_id===pid)) continue;
     const cots=(selD.cotizaciones||[]).filter(c=>c.seleccionado&&c.proveedor_id===pid);
-    const partidas=cots.map(c=>{
-      const cant=parseFloat(c.cantidad)||0, sub=parseFloat(c.subtotal)||0;
-      const precio=(cant&&sub)?(sub/cant).toFixed(2):"";
-      return {cantidad:c.cantidad||"",unidad:c.unidad||"",descripcion:c.descripcion||"",precio,importe:sub?sub.toFixed(2):""};
-    });
+    const partidas=[];
+    for(const c of cots){
+      if(c.productos&&c.productos.length){
+        for(const pr of c.productos){
+          if(pr.seleccionado) partidas.push({cantidad:pr.cantidad||"",unidad:pr.unidad||"",descripcion:pr.descripcion||"",precio:pr.precio||"",importe:pr.importe||""});
+        }
+      } else { // compatibilidad con cotizaciones del formato anterior
+        const cant=parseFloat(c.cantidad)||0, sub=parseFloat(c.subtotal)||0;
+        partidas.push({cantidad:c.cantidad||"",unidad:c.unidad||"",descripcion:c.descripcion||"",precio:(cant&&sub)?(sub/cant).toFixed(2):"",importe:sub?sub.toFixed(2):""});
+      }
+    }
     const p=provDe(pid);
     ordenes.push({id:crypto.randomUUID(), proveedor_id:pid, moneda:"MXN", cond_pago:(p&&p.condicion_pago)||"", partidas, estado:"", version:CAT.versiones.oc});
   }

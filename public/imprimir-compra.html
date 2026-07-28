@@ -102,12 +102,12 @@ async function inicio(){
   if(DOC!=="oc" && (sl.datos.cotizaciones||[]).length){
     const d=sl.datos;
     html+=`<div class="hoja">${cab("SELECCIÓN DE PROVEEDOR", d.version||CAT.versiones.seleccion)}
-      <table><thead><tr><th>#</th><th>Proveedor</th><th>Contacto</th><th>Descripción</th><th>Cant.</th><th>Criterios que cumple</th><th>Total</th><th>Estado</th></tr></thead>
-      <tbody>${d.cotizaciones.map((q,i)=>{const p=prov(q.proveedor_id);return `<tr ${q.seleccionado?'style="background:#e6f5ec"':""}>
-        <td>${i+1}</td><td>${e(p?p.razon_social:"—")}</td><td>${e(p?(p.contacto||"")+" "+(p.telefono||""):"")}</td>
-        <td>${e(q.descripcion||"")}</td><td>${e(q.cantidad||"")} ${e(q.unidad||"")}</td>
-        <td>${(q.criterios||[]).join(", ")}</td><td>${dinero(q.total)}</td>
-        <td>${q.seleccionado?"<b>SELECCIONADO ✔</b>":"No seleccionado"}</td></tr>`;}).join("")}</tbody></table>
+      ${d.cotizaciones.map((q,i)=>{const p=prov(q.proveedor_id);
+        const prods=(q.productos&&q.productos.length)?q.productos:[{cantidad:q.cantidad,unidad:q.unidad,descripcion:q.descripcion,precio:"",importe:q.subtotal,seleccionado:q.seleccionado}];
+        return `<h2 style="font-size:.85rem;margin-top:${i?"14px":"4px"}">Cotización ${i+1} · ${e(p?p.razon_social:"—")}${(q.criterios&&q.criterios.length)?(" · Cumple: "+q.criterios.join(", ")):""}</h2>
+        <table><thead><tr><th style="width:60px">Compra</th><th style="width:70px">Cant.</th><th style="width:65px">Unidad</th><th>Descripción</th><th style="width:95px">P. unitario</th><th style="width:95px">Importe</th></tr></thead>
+        <tbody>${prods.map(pr=>`<tr ${pr.seleccionado?'style="background:#e6f5ec"':""}><td style="text-align:center">${pr.seleccionado?"✔":""}</td><td>${e(pr.cantidad||"")}</td><td>${e(pr.unidad||"")}</td><td>${e(pr.descripcion||"")}</td><td style="text-align:right">${pr.precio?dinero(pr.precio):"—"}</td><td style="text-align:right">${pr.importe?dinero(pr.importe):"—"}</td></tr>`).join("")}</tbody></table>
+        <div style="text-align:right;font-size:.85rem;margin-top:2px">Total cotizado: <b>${dinero(q.total)}</b></div>`;}).join("")}
       ${d.cotizaciones.length<3?`<div style="margin-top:8px;font-size:.85rem"><b style="color:var(--gris)">Justificación (menos de 3 cotizaciones):</b> ${e(d.justificacion||"")}</div>`:""}
       ${d.estado==="aprobada"?`<div class="sello">✔ Aprobada electrónicamente por ${e(d.aprobada_por||"")} · ${new Date(d.fecha_aprobacion).toLocaleString("es-MX")}</div>`:""}
       ${firmasHTML(sl.firmas)}${leyenda}</div>`;
