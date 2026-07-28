@@ -82,7 +82,7 @@ function filtrar(el){
 
 function coincideFiltro(c){
   const e=c.resumen.etiqueta;
-  if(FILTRO==="pendientes") return e==="Req. en autorización"||e==="En cotización"||e==="Selección aprobada"||e==="Req. autorizada"||e==="OC autorizada";
+  if(FILTRO==="pendientes") return e==="Pendiente de autorizar"||e==="En cotización"||e==="Selección aprobada"||e==="Requisición autorizada"||e==="OC autorizada";
   if(FILTRO==="proceso") return !e.includes("Cerrada") && e!=="Rechazada";
   if(FILTRO==="cerradas") return e.includes("Cerrada");
   if(FILTRO==="rechazadas") return e==="Rechazada";
@@ -95,27 +95,26 @@ function pintar(){
   const filtradas=LISTA.filter(c=>coincideFiltro(c) && (
     !q || ("req-"+c.folio).toLowerCase().includes(q) || (c.folio||"").includes(q) ||
     (c.proyecto||"").toLowerCase().includes(q) || (c.cliente||"").toLowerCase().includes(q) ||
-    (c.tipo_compra||"").toLowerCase().includes(q) || (c.destino||"").toLowerCase().includes(q)
+    (c.tipo_compra||"").toLowerCase().includes(q) || (c.destino||"").toLowerCase().includes(q) ||
+    (c.descripcion1||"").toLowerCase().includes(q)
   ));
   if(!filtradas.length){
     cont.className="";
     cont.innerHTML=`<div class="vacio">${LISTA.length?"No hay compras con este filtro.":"Aún no hay compras."}<br><br><button class="btn primario" onclick="nuevaCompra()">+ Crear la primera requisición</button></div>`;
     return;
   }
-  cont.className="grid";
+  cont.className="lista-req";
   cont.innerHTML=filtradas.map(c=>`
-    <div class="tarjeta" style="position:relative" onclick="location.href='compra.html?id=${c.id}'">
-      ${USUARIO.rol_app==="admin"?`<button title="Eliminar expediente" onclick="event.stopPropagation();borrarCompra('${c.id}','${escaparHTML(c.folio)}')" style="position:absolute;top:10px;right:10px;background:#fdeaea;color:#d23f3f;border:none;border-radius:8px;width:28px;height:28px;cursor:pointer;font-weight:700">🗑</button>`:""}
-      <div class="cli">REQ-${escaparHTML(c.folio)}</div>
-      <div class="meta">${c.destino==="INTERNA DINMEC"?"Uso interno DINMEC":(escaparHTML(c.proyecto||"(Sin proyecto)")+" "+(c.cliente?("· "+escaparHTML(c.cliente)):""))}</div>
-      <div class="chips">
-        <span class="chip ${c.resumen.color}">${escaparHTML(c.resumen.etiqueta)}</span>
-        ${c.destino==="INTERNA DINMEC"?`<span class="chip azul">INTERNA DINMEC</span>`:""}
-        ${c.tipo_compra?`<span class="chip">${escaparHTML(c.tipo_compra)}</span>`:""}
-        ${c.fecha_requerida?`<span class="chip gris">Entrega ${fechaCorta(c.fecha_requerida)}</span>`:""}
+    <div class="fila-req" onclick="location.href='compra.html?id=${c.id}'">
+      <div class="fr-folio">REQ-${escaparHTML(c.folio)}</div>
+      <div class="fr-desc">${escaparHTML(c.descripcion1||"(sin partidas capturadas)")}${c.partidas>1?` <span class="fr-mas">+${c.partidas-1} más</span>`:""}
+        <div class="fr-sub">${c.destino==="INTERNA DINMEC"?"Uso interno DINMEC":(escaparHTML(c.proyecto||"")+(c.cliente?(" · "+escaparHTML(c.cliente)):""))} · Últ.: ${escaparHTML(c.actualizado_por||"")} ${fechaCorta(c.actualizado)}</div>
       </div>
-      <div class="barraprog"><i style="width:${c.resumen.pct}%"></i></div>
-      <div class="meta" style="font-size:.76rem">Últ. cambio: ${escaparHTML(c.actualizado_por||"")} · ${fechaCorta(c.actualizado)}</div>
+      <div class="fr-der">
+        ${c.destino==="INTERNA DINMEC"?`<span class="chip azul">INTERNA</span>`:""}
+        <span class="chip ${c.resumen.color}">${escaparHTML(c.resumen.etiqueta)}</span>
+        ${USUARIO.rol_app==="admin"?`<button class="fr-borrar" title="Eliminar expediente" onclick="event.stopPropagation();borrarCompra('${c.id}','${escaparHTML(c.folio)}')">🗑</button>`:""}
+      </div>
     </div>`).join("");
 }
 

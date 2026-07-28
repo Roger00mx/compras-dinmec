@@ -54,7 +54,7 @@
 
 <script src="comun.js"></script>
 <script>
-let USUARIO, ID=paramURL("id"), DATA, CAT, PROVS=[];
+let USUARIO, ID=paramURL("id"), DATA, CAT, PROVS=[], USERS=[];
 const firmasVivas={};
 let corrigiendoReq=false; // modo corrección de captura (admin/dirección)
 
@@ -62,7 +62,7 @@ let corrigiendoReq=false; // modo corrección de captura (admin/dirección)
 const SECS=[
   {id:"requisicion", no:"01", titulo:"Requisición de compra",  fo:()=>CAT.versiones.requisicion, resp:"Solicitante / Responsable de almacén"},
   {id:"seleccion",   no:"02", titulo:"Selección de proveedor", fo:()=>CAT.versiones.seleccion,   resp:"Gerente de administración y finanzas"},
-  {id:"oc",          no:"03", titulo:"Orden de compra",        fo:()=>CAT.versiones.oc,          resp:"Gerente de administración y finanzas"},
+  {id:"oc",          no:"03", titulo:"Órdenes de compra (una por proveedor)", fo:()=>CAT.versiones.oc,  resp:"Gerente de administración y finanzas"},
   {id:"recepcion",   no:"04", titulo:"Recepción de materiales (almacén)", fo:()=>CAT.versiones.recepcion, resp:"Responsable de almacén"},
   {id:"cxp",         no:"05", titulo:"Facturas y cuentas por pagar", fo:()=>CAT.versiones.cxp,   resp:"Gerente de administración y finanzas"},
 ];
@@ -72,6 +72,8 @@ async function inicio(){
   document.getElementById("usuario").textContent="👤 "+USUARIO.nombre;
   CAT=await api.get("/api/catalogos");
   PROVS=await api.get("/api/proveedores");
+  USERS=await api.get("/api/usuarios-lista");
+  if(USERS.error) USERS=[];
   await cargar();
   conectarEnVivo(ev=>{ if(ev.compraId===ID) recargarSuave(); });
 }
@@ -125,7 +127,7 @@ function estadoIcono(s){
   const d=sec(s.id).datos;
   if(s.id==="requisicion") return d.estado==="autorizada"?"✅":(d.estado==="rechazada"?"❌":(d.estado==="solicitada"?"🕓":"⬜"));
   if(s.id==="seleccion") return d.estado==="aprobada"?"✅":((d.cotizaciones||[]).length?"🕓":"⬜");
-  if(s.id==="oc") return d.estado==="enviada"?"✅":(d.estado==="autorizada"?"🕓":"⬜");
+  if(s.id==="oc"){ const o=d.ordenes||(d.partidas?[d]:[]); return o.length&&o.every(x=>x.estado==="enviada")?"✅":(o.some(x=>x.estado)?"🕓":(o.length?"🕓":"⬜")); }
   if(s.id==="recepcion") return d.estado==="total"?"✅":((d.entregas||[]).length?"🕓":"⬜");
   if(s.id==="cxp"){ const f=d.facturas||[]; return f.length&&f.every(x=>x.pagada)?"✅":(f.length?"🕓":"⬜"); }
   return "⬜";
@@ -135,7 +137,7 @@ function subEtiqueta(s){
   const act=m.actualizado?(" · últ. "+escaparHTML(m.actualizado_por||"")+" "+fechaCorta(m.actualizado)):"";
   if(s.id==="requisicion") return (d.estado?("Estado: "+d.estado):"Sin iniciar")+act;
   if(s.id==="seleccion") return ((d.cotizaciones||[]).length+" cotizaciones"+(d.estado==="aprobada"?" · aprobada":""))+act;
-  if(s.id==="oc") return (d.estado?("Estado: "+d.estado):"Sin iniciar")+act;
+  if(s.id==="oc"){ const o=d.ordenes||(d.partidas?[d]:[]); return (o.length?(o.length+" OC · "+o.filter(x=>x.estado==="autorizada"||x.estado==="enviada").length+" autorizadas · "+o.filter(x=>x.estado==="enviada").length+" enviadas"):"Sin iniciar")+act; }
   if(s.id==="recepcion") return ((d.entregas||[]).length+" entregas"+(d.estado==="total"?" · completa":""))+act;
   if(s.id==="cxp"){ const f=d.facturas||[]; return f.length+" facturas · "+f.filter(x=>x.pagada).length+" pagadas"+act; }
   return act;
@@ -179,11 +181,17 @@ function opcionesProv(sel){ return `<option value="">— Elegir proveedor —</o
 function provDe(id){ return PROVS.find(p=>p.id===id); }
 
 // Firma reutilizable (mismo canvas de la hoja viajera)
+function selNombres(slot, sel, soloAutoriza){
+  const lista=soloAutoriza?USERS.filter(u=>u.autoriza):USERS;
+  const extra=(sel&&!lista.some(u=>u.nombre===sel))?`<option selected>${escaparHTML(sel)}</option>`:"";
+  return `<select data-fnombre="${slot}"><option value="">— Elegir nombre —</option>${lista.map(u=>`<option ${u.nombre===sel?"selected":""}>${escaparHTML(u.nombre)}</option>`).join("")}${extra}</select>`;
+}
 function firmaHTML(slot, f, bloqueado){
   const firmado=!!(f&&f.firma);
+  const soloAut=/autoriza|aprobado|direc/i.test(f.rol||"");
   return `<div class="verif">
     <div class="rol">✍️ ${escaparHTML(f.rol)}</div>
-    <div class="campo" style="margin-bottom:8px"><label>Nombre</label><input data-fnombre="${slot}" value="${escaparHTML(f.nombre||"")}" placeholder="Nombre de quien firma" ${bloqueado?"readonly":""}></div>
+    <div class="campo" style="margin-bottom:8px"><label>Nombre${soloAut?" (solo quien autoriza)":""}</label>${bloqueado?`<input value="${escaparHTML(f.nombre||"")}" readonly>`:selNombres(slot, f.nombre||"", soloAut)}</div>
     <div class="firma-zona">
       ${firmado
         ? `<img class="firma-img" src="${f.firma}" alt="firma">`
@@ -372,7 +380,7 @@ function construirSeleccion(){
 
   cuerpo.innerHTML=`
     ${bloqueado?`<div class="sello">✅ Selección aprobada electrónicamente por ${escaparHTML(d.aprobada_por||"")} el ${fechaCorta(d.fecha_aprobacion)} · ${CAT.versiones.seleccion}</div>`:""}
-    <div class="bloque"><div class="et">Cotizaciones comparadas (mínimo 3, o justifica abajo) — criterios del PS-GDC-01</div>
+    <div class="bloque"><div class="et">Cotizaciones comparadas (mínimo 3, o justifica abajo) — puedes seleccionar VARIOS proveedores, uno por producto; se generará una OC por cada proveedor</div>
       <div id="s-cotizaciones">${cots.map((c,i)=>cotizacionHTML(c,i,!bloqueado)).join("")}</div>
       ${bloqueado?"":`<div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
         <button class="btn fantasma chico" onclick="agregarCotizacion()">+ Agregar cotización</button>
@@ -421,7 +429,7 @@ function cotizacionHTML(c,i,e){
     <div class="criterios">${cri.map(cr=>`<label><input type="checkbox" data-cri="${cr}" ${(c.criterios||[]).includes(cr)?"checked":""} ${e?"":"disabled"}>${cr}</label>`).join("")}</div>
     <div style="display:flex;justify-content:space-between;margin-top:10px;align-items:center">
       <label style="display:flex;gap:7px;align-items:center;font-weight:700;cursor:pointer;color:var(--verde)">
-        <input type="radio" name="cot-sel" data-sel ${c.seleccionado?"checked":""} ${e?"":"disabled"} style="width:17px;height:17px"> Proveedor seleccionado
+        <input type="checkbox" data-sel ${c.seleccionado?"checked":""} ${e?"":"disabled"} style="width:17px;height:17px"> Producto seleccionado con este proveedor
       </label>
       ${e?`<button class="btn peligro chico" onclick="this.closest('.cotiz').remove()">Quitar</button>`:""}
     </div>
@@ -470,80 +478,84 @@ async function guardarSel(aprobar){
   if(aprobar){
     const elegidas=d.cotizaciones.filter(c=>c.seleccionado);
     if(!d.cotizaciones.length){ aviso("⚠️ Captura al menos una cotización"); return; }
-    if(elegidas.length!==1){ aviso("⚠️ Marca exactamente UN proveedor como seleccionado"); return; }
-    if(!elegidas[0].proveedor_id){ aviso("⚠️ La cotización seleccionada debe tener proveedor del catálogo"); return; }
+    if(!elegidas.length){ aviso("⚠️ Marca al menos un producto/proveedor como seleccionado"); return; }
+    if(elegidas.some(c=>!c.proveedor_id)){ aviso("⚠️ Toda cotización seleccionada debe tener proveedor del catálogo"); return; }
     if(d.cotizaciones.length<3 && !d.justificacion){ aviso("⚠️ Con menos de 3 cotizaciones la justificación es obligatoria (FO-GDC-03)"); return; }
     if(!fEla.firma||!fApr.firma){ aviso("⚠️ Se requieren ambas firmas (Elaboró y Aprobó)"); return; }
     d.estado="aprobada"; d.aprobada_por=USUARIO.nombre; d.fecha_aprobacion=new Date().toISOString();
-    d.proveedor_id=elegidas[0].proveedor_id;
+    d.proveedores=[...new Set(elegidas.map(c=>c.proveedor_id))];
+    d.proveedor_id=d.proveedores[0];
   }
   await guardarSeccion("seleccion", d, [fEla,fApr], aprobar?"Selección aprobada ✓":"Guardado ✓");
 }
 
-// ================= 03 · ORDEN DE COMPRA (FO-GDC-02) =================
+// ================= 03 · ÓRDENES DE COMPRA (FO-GDC-02) — una por proveedor =================
+function ordenesDe(d){ // compatibilidad: expedientes viejos con una sola OC
+  if(d.ordenes) return d.ordenes;
+  if(d.partidas&&d.partidas.length) return [{id:"legacy", ...d}];
+  return [];
+}
 function construirOC(){
   const cuerpo=document.getElementById("cuerpo-oc");
   const selD=sec("seleccion").datos;
   if(selD.estado!=="aprobada"){ cuerpo.innerHTML=`<div class="candado">🔒 Se habilita cuando la selección de proveedor esté aprobada.</div>`; return; }
-  const d=sec("oc").datos, fs=sec("oc").firmas;
-  const provId=d.proveedor_id||selD.proveedor_id;
-  const p=provDe(provId);
-  const bloqueado=d.estado==="autorizada"||d.estado==="enviada";
-  const e=!bloqueado;
-  const partidas=(d.partidas&&d.partidas.length)?d.partidas:[{}];
-  const F=CAT.facturacion;
-  const fEla=firmaParaPintar("oc","oc__ela", fs[0]||{rol:"Elaboró (Responsable de compras)"});
-  const fAut=firmaParaPintar("oc","oc__aut", fs[1]||{rol:"Autorizó (Dirección general)"});
-
+  const d=sec("oc").datos;
+  const ordenes=ordenesDe(d);
+  const provsSel=[...new Set((selD.cotizaciones||[]).filter(c=>c.seleccionado&&c.proveedor_id).map(c=>c.proveedor_id))];
+  const faltantes=provsSel.filter(pid=>!ordenes.some(o=>o.proveedor_id===pid));
+  const F2=CAT.facturacion;
   cuerpo.innerHTML=`
-    ${d.estado==="enviada"?`<div class="sello">📨 OC-${DATA.compra.folio} enviada al proveedor el ${fechaCorta(d.fecha_envio)} por ${escaparHTML(d.enviada_por||"")}</div>`:""}
-    ${d.estado==="autorizada"?`<div class="sello">✅ Autorizada electrónicamente por ${escaparHTML(d.autorizada_por||"")} el ${fechaCorta(d.fecha_autorizacion)} · ${CAT.versiones.oc}</div>`:""}
     <div class="bloque"><div class="et">Datos de facturación (DINMEC)</div>
-      <div class="candado" style="margin-top:0">${escaparHTML(F.razon)} · RFC ${escaparHTML(F.rfc)} · ${escaparHTML(F.direccion1)}, ${escaparHTML(F.direccion2)} · ${escaparHTML(F.email)}</div>
+      <div class="candado" style="margin-top:0">${escaparHTML(F2.razon)} · RFC ${escaparHTML(F2.rfc)} · ${escaparHTML(F2.direccion1)}, ${escaparHTML(F2.direccion2)} · ${escaparHTML(F2.email)}</div>
     </div>
-    <div class="bloque"><div class="et">Proveedor (de la selección aprobada)</div>
-      <div class="candado" style="margin-top:0">${p?`<b>${escaparHTML(p.razon_social)}</b> · ${escaparHTML(p.direccion||"")} · Contacto: ${escaparHTML(p.contacto||"—")} · Tel: ${escaparHTML(p.telefono||"—")} · ${escaparHTML(p.email||"")}`:"⚠️ Proveedor no encontrado en el catálogo"}</div>
-    </div>
-    <div class="bloque"><div class="et">Condiciones (${CAT.versiones.oc})</div>
-      <div class="campos">
-        <div class="campo"><label>No. cotización del proveedor</label><input id="o-cotizacion" value="${escaparHTML(d.cotizacion||"")}" ${e?"":"readonly"}></div>
-        <div class="campo"><label>Uso de CFDI</label><select id="o-uso_cfdi" ${e?"":"disabled"}>${opciones(CAT.uso_cfdi,d.uso_cfdi||CAT.uso_cfdi[1])}</select></div>
-        <div class="campo"><label>Forma de pago</label><select id="o-forma_pago" ${e?"":"disabled"}>${opciones(CAT.forma_pago,d.forma_pago||CAT.forma_pago[1])}</select></div>
-        <div class="campo"><label>Método de pago</label><select id="o-metodo_pago" ${e?"":"disabled"}>${opciones(CAT.metodo_pago,d.metodo_pago||CAT.metodo_pago[0])}</select></div>
-        <div class="campo"><label>Condiciones de pago</label><select id="o-cond_pago" ${e?"":"disabled"}>${opciones(CAT.condiciones_pago,d.cond_pago||(p&&p.condicion_pago)||CAT.condiciones_pago[0])}</select></div>
-        <div class="campo"><label>Moneda</label><select id="o-moneda" ${e?"":"disabled"}>${opciones(CAT.monedas,d.moneda||"MXN")}</select></div>
-        <div class="campo"><label>Tiempo de entrega</label><input id="o-tiempo" value="${escaparHTML(d.tiempo_entrega||"")}" ${e?"":"readonly"}></div>
-      </div>
-    </div>
-    <div class="bloque"><div class="et">Partidas</div>
-      ${e?`<button class="btn fantasma chico" onclick="copiarDeRequisicion()">⤵ Copiar partidas de la requisición</button>`:""}
-      <div class="ptabla-scroll"><table class="ptabla" id="o-partidas"><thead>
-        <tr><th style="width:90px">Cantidad</th><th style="width:100px">Unidad</th><th>Descripción</th><th style="width:130px">Precio unitario</th><th style="width:130px">Importe</th>${e?'<th style="width:36px"></th>':""}</tr></thead>
-        <tbody>${partidas.map(pp=>filaOC(pp,e)).join("")}</tbody></table></div>
-      ${e?`<button class="btn fantasma chico" style="margin-top:8px" onclick="agregarFilaOC()">+ Agregar partida</button>`:""}
-      <div class="totales">
-        <div>Sub-total: <b id="o-subtotal">${dinero(d.subtotal)}</b></div>
-        <div>Descuento: ${e?`<input id="o-descuento" type="number" step="any" value="${escaparHTML(d.descuento??0)}" style="width:110px;border:1.5px solid var(--linea);border-radius:7px;padding:5px 8px" oninput="calcOC()">`:`<b>${dinero(d.descuento)}</b>`}</div>
-        <div>IVA (${CAT.iva}%): <b id="o-iva">${dinero(d.iva)}</b></div>
-        <div class="tot">TOTAL: <span id="o-total">${dinero(d.total,d.moneda)}</span></div>
-      </div>
-    </div>
-    ${adjuntosHTML("oc", d.estado==="enviada")}
-    <div class="bloque"><div class="et">Firmas</div>
-      ${firmaHTML("oc__ela", fEla, bloqueado)}
-      ${firmaHTML("oc__aut", fAut, bloqueado)}
-    </div>
+    ${ordenes.length?"":`<div class="candado">Aún no hay órdenes generadas. Usa el botón de abajo: se crea UNA OC por cada proveedor seleccionado en la etapa 02.</div>`}
+    <div id="oc-lista">${ordenes.map((o,i)=>ordenHTML(o,i,ordenes.length)).join("")}</div>
+    ${adjuntosHTML("oc", false)}
     <div class="tarea-pie">
-      ${e?`<button class="btn" onclick="guardarOC('')">💾 Guardar</button>`:""}
-      ${e&&USUARIO.autoriza?`<button class="btn verde" onclick="guardarOC('autorizada')">✓ Autorizar OC</button>`:""}
-      ${e&&!USUARIO.autoriza?`<span class="candado">La autorización de la OC la da Dirección general</span>`:""}
-      ${d.estado==="autorizada"?`<button class="btn fantasma" onclick="window.open('imprimir-compra.html?id='+ID+'&doc=oc','_blank')">🖨 Ver OC para enviar</button>
-        <button class="btn primario" onclick="marcarEnviada()">📨 Marcar como enviada al proveedor</button>`:""}
+      ${faltantes.length?`<button class="btn primario" onclick="generarOCs()">⚙️ Generar OC de proveedores seleccionados (${faltantes.length})</button>`:""}
     </div>`;
-  activarFirmas(cuerpo);
-  cuerpo.querySelectorAll("#o-partidas input").forEach(i=>i.addEventListener("input",calcOC));
-  calcOC();
+  ordenes.forEach((o,i)=>{ if(!o.estado) activarCalcOrden(i); });
 }
+function folioOC(i,total){ return "OC-"+DATA.compra.folio+(total>1?("-"+(i+1)):""); }
+function ordenHTML(o,i,total){
+  const p=provDe(o.proveedor_id);
+  const e=!o.estado;
+  return `<div class="entrega" data-orden="${i}">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;align-items:center">
+      <b>${folioOC(i,total)} · ${escaparHTML(p?p.razon_social:"(proveedor)")}</b>
+      <span class="chip ${o.estado==="enviada"?"verde":(o.estado==="autorizada"?"azul":"gris")}">${o.estado==="enviada"?"Enviada al proveedor":(o.estado==="autorizada"?"Autorizada":"Borrador")}</span>
+    </div>
+    <div class="meta" style="font-size:.82rem;color:var(--gris)">${p?`${escaparHTML(p.contacto||"—")} · ${escaparHTML(p.telefono||"—")} · ${escaparHTML(p.email||"")}`:""}</div>
+    ${o.estado?`<div class="sello">✅ Autorizada por ${escaparHTML(o.autorizada_por||"")} · ${fechaCorta(o.fecha_autorizacion)}${o.estado==="enviada"?` — 📨 enviada por ${escaparHTML(o.enviada_por||"")} el ${fechaCorta(o.fecha_envio)}`:""}</div>`:""}
+    <div class="campos" style="margin-top:8px">
+      <div class="campo"><label>No. cotización</label><input data-oc="${i}" data-k="cotizacion" value="${escaparHTML(o.cotizacion||"")}" ${e?"":"readonly"}></div>
+      <div class="campo"><label>Uso de CFDI</label>${e?`<select data-oc="${i}" data-k="uso_cfdi">${opciones(CAT.uso_cfdi,o.uso_cfdi||CAT.uso_cfdi[1])}</select>`:`<input value="${escaparHTML(o.uso_cfdi||"")}" readonly>`}</div>
+      <div class="campo"><label>Forma de pago</label>${e?`<select data-oc="${i}" data-k="forma_pago">${opciones(CAT.forma_pago,o.forma_pago||CAT.forma_pago[1])}</select>`:`<input value="${escaparHTML(o.forma_pago||"")}" readonly>`}</div>
+      <div class="campo"><label>Método de pago</label>${e?`<select data-oc="${i}" data-k="metodo_pago">${opciones(CAT.metodo_pago,o.metodo_pago||CAT.metodo_pago[0])}</select>`:`<input value="${escaparHTML(o.metodo_pago||"")}" readonly>`}</div>
+      <div class="campo"><label>Condiciones de pago</label>${e?`<select data-oc="${i}" data-k="cond_pago">${opciones(CAT.condiciones_pago,o.cond_pago||(p&&p.condicion_pago)||CAT.condiciones_pago[0])}</select>`:`<input value="${escaparHTML(o.cond_pago||"")}" readonly>`}</div>
+      <div class="campo"><label>Moneda</label>${e?`<select data-oc="${i}" data-k="moneda">${opciones(CAT.monedas,o.moneda||"MXN")}</select>`:`<input value="${escaparHTML(o.moneda||"MXN")}" readonly>`}</div>
+      <div class="campo"><label>Tiempo de entrega</label><input data-oc="${i}" data-k="tiempo_entrega" value="${escaparHTML(o.tiempo_entrega||"")}" ${e?"":"readonly"}></div>
+    </div>
+    <div class="ptabla-scroll"><table class="ptabla" id="op-${i}"><thead>
+      <tr><th style="width:90px">Cantidad</th><th style="width:100px">Unidad</th><th>Descripción</th><th style="width:120px">Precio unitario</th><th style="width:120px">Importe</th>${e?'<th style="width:34px"></th>':""}</tr></thead>
+      <tbody>${((o.partidas&&o.partidas.length)?o.partidas:[{}]).map(pp=>filaOC(pp,e)).join("")}</tbody></table></div>
+    ${e?`<button class="btn fantasma chico" style="margin-top:8px" onclick="agregarFilaOC(${i})">+ Agregar partida</button>`:""}
+    <div class="totales">
+      <div>Sub-total: <b id="ot-sub-${i}">${dinero(o.subtotal)}</b></div>
+      <div>Descuento: ${e?`<input id="ot-desc-${i}" type="number" step="any" value="${escaparHTML(o.descuento??0)}" style="width:100px;border:1.5px solid var(--linea);border-radius:7px;padding:5px 8px" oninput="calcOrden(${i})">`:`<b>${dinero(o.descuento)}</b>`}</div>
+      <div>IVA (${CAT.iva}%): <b id="ot-iva-${i}">${dinero(o.iva)}</b></div>
+      <div class="tot">TOTAL: <span id="ot-tot-${i}">${dinero(o.total,o.moneda)}</span></div>
+    </div>
+    <div class="tarea-pie" style="margin-top:8px">
+      ${e?`<button class="btn peligro chico" onclick="quitarOrden(${i})">Quitar OC</button>
+        <button class="btn" onclick="guardarOrden(${i},'')">💾 Guardar</button>
+        ${USUARIO.autoriza?`<button class="btn verde" onclick="guardarOrden(${i},'autorizada')">✓ Autorizar esta OC</button>`:`<span class="candado" style="margin:0">Autorizan: Dirección / Admón. y finanzas</span>`}`:""}
+      ${o.estado?`<button class="btn fantasma" onclick="window.open('imprimir-compra.html?id='+ID+'&doc=oc&orden=${escaparHTML(o.id)}','_blank')">🖨 Ver / imprimir esta OC</button>`:""}
+      ${o.estado==="autorizada"?`<button class="btn primario" onclick="marcarEnviadaOrden(${i})">📨 Marcar como enviada</button>`:""}
+    </div>
+  </div>`;
+}
+
 function filaOC(p,e){
   return `<tr>
     <td><input class="num" data-o="cantidad" type="number" step="any" value="${escaparHTML(p.cantidad??"")}" ${e?"":"readonly"}></td>
@@ -551,84 +563,111 @@ function filaOC(p,e){
     <td><textarea data-o="descripcion" rows="1" ${e?"":"readonly"}>${escaparHTML(p.descripcion||"")}</textarea></td>
     <td><input class="num" data-o="precio" type="number" step="any" value="${escaparHTML(p.precio??"")}" ${e?"":"readonly"}></td>
     <td><input class="num" data-o="importe" value="${escaparHTML(p.importe??"")}" readonly></td>
-    ${e?`<td><button class="quitar" onclick="this.closest('tr').remove();calcOC()">×</button></td>`:""}
+    ${e?`<td><button class="quitar" onclick="var t=this.closest('table');this.closest('tr').remove();calcOrden(parseInt(t.id.slice(3)))">×</button></td>`:""}
   </tr>`;
 }
-function agregarFilaOC(){
-  const tb=document.querySelector("#o-partidas tbody");
+function agregarFilaOC(i){
+  const tb=document.querySelector("#op-"+i+" tbody");
   tb.insertAdjacentHTML("beforeend", filaOC({},true));
-  tb.lastElementChild.querySelectorAll("input").forEach(i=>i.addEventListener("input",calcOC));
+  tb.lastElementChild.querySelectorAll("input").forEach(x=>x.addEventListener("input",()=>calcOrden(i)));
 }
-function copiarDeRequisicion(){
-  const req=sec("requisicion").datos;
-  const tb=document.querySelector("#o-partidas tbody");
-  tb.innerHTML=(req.partidas||[]).map(p=>filaOC({cantidad:p.cantidad,unidad:p.unidad,descripcion:p.descripcion},true)).join("")||filaOC({},true);
-  tb.querySelectorAll("input").forEach(i=>i.addEventListener("input",calcOC));
-  calcOC(); aviso("Partidas copiadas de la requisición ✓");
+function activarCalcOrden(i){
+  document.querySelectorAll("#op-"+i+" input").forEach(x=>x.addEventListener("input",()=>calcOrden(i)));
+  calcOrden(i);
 }
-function calcOC(){
+function calcOrden(i){
   let sub=0;
-  document.querySelectorAll("#o-partidas tbody tr").forEach(tr=>{
+  document.querySelectorAll("#op-"+i+" tbody tr").forEach(tr=>{
     const c=parseFloat(tr.querySelector('[data-o="cantidad"]')?.value)||0;
     const pr=parseFloat(tr.querySelector('[data-o="precio"]')?.value)||0;
     const imp=c*pr;
     const impEl=tr.querySelector('[data-o="importe"]'); if(impEl) impEl.value=imp?imp.toFixed(2):"";
     sub+=imp;
   });
-  const desc=parseFloat(document.getElementById("o-descuento")?.value)||parseFloat(sec("oc").datos.descuento)||0;
+  const desc=parseFloat(document.getElementById("ot-desc-"+i)?.value)||0;
   const iva=Math.round((sub-desc)*CAT.iva)/100;
   const total=sub-desc+iva;
+  const mon=document.querySelector(`[data-oc="${i}"][data-k="moneda"]`)?.value||"MXN";
   const set=(id,v)=>{const el=document.getElementById(id); if(el) el.textContent=v;};
-  set("o-subtotal",dinero(sub)); set("o-iva",dinero(iva)); set("o-total",dinero(total,gv("o-moneda")||"MXN"));
+  set("ot-sub-"+i,dinero(sub)); set("ot-iva-"+i,dinero(iva)); set("ot-tot-"+i,dinero(total,mon));
   return {sub,desc,iva,total};
 }
-function leerPartidasOC(){
+function leerPartidasOrden(i){
   const out=[];
-  document.querySelectorAll("#o-partidas tbody tr").forEach(tr=>{
+  document.querySelectorAll("#op-"+i+" tbody tr").forEach(tr=>{
     const g=k=>tr.querySelector(`[data-o="${k}"]`)?.value?.trim()||"";
     const p={cantidad:g("cantidad"),unidad:g("unidad"),descripcion:g("descripcion"),precio:g("precio"),importe:g("importe")};
     if(p.cantidad||p.descripcion||p.precio) out.push(p);
   });
   return out;
 }
-async function guardarOC(nuevoEstado){
-  const cuerpo=document.getElementById("cuerpo-oc");
+function generarOCs(){
   const selD=sec("seleccion").datos;
   const d={...sec("oc").datos};
-  d.proveedor_id=d.proveedor_id||selD.proveedor_id;
-  d.cotizacion=gv("o-cotizacion"); d.uso_cfdi=gv("o-uso_cfdi"); d.forma_pago=gv("o-forma_pago");
-  d.metodo_pago=gv("o-metodo_pago"); d.cond_pago=gv("o-cond_pago"); d.moneda=gv("o-moneda"); d.tiempo_entrega=gv("o-tiempo");
-  d.partidas=leerPartidasOC(); d.version=CAT.versiones.oc;
-  const t=calcOC(); d.subtotal=t.sub.toFixed(2); d.descuento=(parseFloat(gv("o-descuento"))||0).toFixed(2); d.iva=t.iva.toFixed(2); d.total=t.total.toFixed(2);
-  const fs=sec("oc").firmas;
-  const fEla=leerFirma(cuerpo,"oc__ela", fs[0]||{rol:"Elaboró (Responsable de compras)"});
-  const fAut=leerFirma(cuerpo,"oc__aut", fs[1]||{rol:"Autorizó (Dirección general)"});
-  if(nuevoEstado==="autorizada"){
-    if(!d.partidas.length||!d.partidas.some(p=>p.precio)){ aviso("⚠️ Captura partidas con precio"); return; }
-    if(!fEla.firma||!fAut.firma){ aviso("⚠️ Se requieren las firmas de Elaboró y Autorizó"); return; }
-    d.estado="autorizada"; d.autorizada_por=USUARIO.nombre; d.fecha_autorizacion=new Date().toISOString();
+  const ordenes=ordenesDe(d).slice();
+  const provsSel=[...new Set((selD.cotizaciones||[]).filter(c=>c.seleccionado&&c.proveedor_id).map(c=>c.proveedor_id))];
+  for(const pid of provsSel){
+    if(ordenes.some(o=>o.proveedor_id===pid)) continue;
+    const cots=(selD.cotizaciones||[]).filter(c=>c.seleccionado&&c.proveedor_id===pid);
+    const partidas=cots.map(c=>{
+      const cant=parseFloat(c.cantidad)||0, sub=parseFloat(c.subtotal)||0;
+      const precio=(cant&&sub)?(sub/cant).toFixed(2):"";
+      return {cantidad:c.cantidad||"",unidad:c.unidad||"",descripcion:c.descripcion||"",precio,importe:sub?sub.toFixed(2):""};
+    });
+    const p=provDe(pid);
+    ordenes.push({id:crypto.randomUUID(), proveedor_id:pid, moneda:"MXN", cond_pago:(p&&p.condicion_pago)||"", partidas, estado:"", version:CAT.versiones.oc});
   }
-  await guardarSeccion("oc", d, [fEla,fAut], nuevoEstado==="autorizada"?"OC autorizada ✓ Ya puedes imprimirla y enviarla":"Guardado ✓");
+  guardarSeccion("oc", {ordenes, version:CAT.versiones.oc}, sec("oc").firmas, "Órdenes generadas ✓ — revisa precios y autoriza cada una");
 }
-async function marcarEnviada(){
-  if(!confirm("¿Confirmas que la OC ya fue enviada al proveedor (correo/WhatsApp)?")) return;
-  const d={...sec("oc").datos, estado:"enviada", enviada_por:USUARIO.nombre, fecha_envio:new Date().toISOString()};
-  await guardarSeccion("oc", d, sec("oc").firmas, "OC marcada como enviada ✓");
+function leerOrden(i){
+  const d={...sec("oc").datos};
+  const ordenes=ordenesDe(d).slice();
+  const o={...ordenes[i]};
+  document.querySelectorAll(`[data-oc="${i}"]`).forEach(el=>{ o[el.dataset.k]=el.value; });
+  o.partidas=leerPartidasOrden(i);
+  const t=calcOrden(i);
+  o.subtotal=t.sub.toFixed(2); o.descuento=t.desc.toFixed(2); o.iva=t.iva.toFixed(2); o.total=t.total.toFixed(2);
+  ordenes[i]=o;
+  return {ordenes,o};
+}
+async function guardarOrden(i,nuevoEstado){
+  const {ordenes,o}=leerOrden(i);
+  if(nuevoEstado==="autorizada"){
+    if(!o.partidas.length||!o.partidas.some(p=>p.precio)){ aviso("⚠️ Captura partidas con precio en esta OC"); return; }
+    o.estado="autorizada"; o.autorizada_por=USUARIO.nombre; o.fecha_autorizacion=new Date().toISOString();
+    ordenes[i]=o;
+  }
+  await guardarSeccion("oc", {ordenes, version:CAT.versiones.oc}, sec("oc").firmas,
+    nuevoEstado==="autorizada"?"OC autorizada ✓ Ya puedes imprimirla y enviarla":"Guardado ✓");
+}
+async function quitarOrden(i){
+  if(!confirm("¿Quitar esta orden de compra?")) return;
+  const ordenes=ordenesDe(sec("oc").datos).filter((_,x)=>x!==i);
+  await guardarSeccion("oc", {ordenes, version:CAT.versiones.oc}, sec("oc").firmas, "OC eliminada");
+}
+async function marcarEnviadaOrden(i){
+  if(!confirm("¿Confirmas que esta OC ya fue enviada al proveedor (correo/WhatsApp)?")) return;
+  const ordenes=ordenesDe(sec("oc").datos).slice();
+  ordenes[i]={...ordenes[i], estado:"enviada", enviada_por:USUARIO.nombre, fecha_envio:new Date().toISOString()};
+  await guardarSeccion("oc", {ordenes, version:CAT.versiones.oc}, sec("oc").firmas, "OC marcada como enviada ✓");
 }
 
 // ================= 04 · RECEPCIÓN (FO-GDC-07) =================
+function ordsActivas(){
+  return ordenesDe(sec("oc").datos).filter(o=>o.estado==="autorizada"||o.estado==="enviada");
+}
 function construirRecepcion(){
   const cuerpo=document.getElementById("cuerpo-recepcion");
-  const ocD=sec("oc").datos;
-  if(ocD.estado!=="autorizada"&&ocD.estado!=="enviada"){ cuerpo.innerHTML=`<div class="candado">🔒 Se habilita cuando la orden de compra esté autorizada.</div>`; return; }
+  const ords=ordsActivas();
+  if(!ords.length){ cuerpo.innerHTML=`<div class="candado">🔒 Se habilita cuando al menos una orden de compra esté autorizada.</div>`; return; }
   const d=sec("recepcion").datos;
   const entregas=d.entregas||[];
   const cerrada=d.estado==="total";
-  const p=provDe(ocD.proveedor_id);
+  const nombresProv=ords.map(o=>{const p=provDe(o.proveedor_id);return p?p.razon_social:"";}).filter(Boolean).join(", ");
 
   cuerpo.innerHTML=`
     ${cerrada?`<div class="sello">✅ Recepción completa — cerrada por ${escaparHTML(d.cerrada_por||"")} el ${fechaCorta(d.fecha_cierre)}</div>`:""}
-    <div class="bloque"><div class="et">Entregas registradas (${CAT.versiones.recepcion}) — Proveedor: ${escaparHTML(p?p.razon_social:"")}</div>
+    <div class="bloque"><div class="et">Entregas registradas (${CAT.versiones.recepcion}) — Proveedores: ${escaparHTML(nombresProv)}</div>
       <div id="rc-lista">${entregas.length?entregas.map((en,i)=>entregaHTML(en,i)).join(""):`<div class="candado" style="margin-top:0">Aún no hay entregas registradas.</div>`}</div>
     </div>
     ${adjuntosHTML("recepcion", false)}
@@ -639,9 +678,10 @@ function construirRecepcion(){
 }
 function entregaHTML(en,i){
   const nc=en.resultado==="no conforme";
+  const pEnt=en.proveedor_id?provDe(en.proveedor_id):null;
   return `<div class="entrega ${nc?"nc":""}">
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
-      <b>Entrega ${i+1} · ${fechaCorta(en.fecha)}</b>
+      <b>Entrega ${i+1} · ${fechaCorta(en.fecha)}${pEnt?(" · "+escaparHTML(pEnt.razon_social)):""}</b>
       <span class="chip ${nc?"rojo":"verde"}">${nc?"⚠️ NO CONFORME":"✔ Conforme"}</span>
     </div>
     <div class="meta" style="font-size:.85rem;color:var(--gris)">Factura/remisión: <b>${escaparHTML(en.factura||"—")}</b></div>
@@ -655,22 +695,27 @@ function entregaHTML(en,i){
     </div>
   </div>`;
 }
+function filaEntrega(p){
+  return `<tr>
+    <td><input data-e="cantidad" type="number" step="any" value="${escaparHTML(p.cantidad||"")}"></td>
+    <td><select data-e="unidad">${opciones([""].concat(CAT.unidades),p.unidad)}</select></td>
+    <td><textarea data-e="descripcion" rows="1">${escaparHTML(p.descripcion||"")}</textarea></td>
+    <td><button class="quitar" onclick="this.closest('tr').remove()">×</button></td></tr>`;
+}
 function nuevaEntrega(){
-  const ocD=sec("oc").datos;
+  const ords=ordsActivas();
   const fondo=document.createElement("div"); fondo.className="modal-fondo";
   fondo.innerHTML=`<div class="modal" style="width:640px">
     <h2>Registrar entrega (FO-GDC-07)</h2>
-    <div class="campos" style="grid-template-columns:1fr 1fr">
+    <div class="campo"><label>Orden de compra / proveedor</label>
+      <select id="e-orden">${ords.map((o,x)=>{const p=provDe(o.proveedor_id);return `<option value="${x}">${folioOC(ordenesDe(sec("oc").datos).indexOf(o),ordenesDe(sec("oc").datos).length)} · ${escaparHTML(p?p.razon_social:"")}</option>`;}).join("")}</select></div>
+    <div class="campos" style="grid-template-columns:1fr 1fr;margin-top:8px">
       <div class="campo"><label>Fecha de entrega</label><input id="e-fecha" type="date" value="${hoyISO()}"></div>
       <div class="campo"><label>Factura / remisión</label><input id="e-factura"></div>
     </div>
     <div class="et" style="margin:12px 0 4px;font-size:.78rem;font-weight:700;color:var(--gris)">MATERIAL RECIBIDO</div>
     <table class="ptabla" id="e-partidas"><thead><tr><th style="width:90px">Cantidad</th><th style="width:100px">Unidad</th><th>Descripción</th><th style="width:34px"></th></tr></thead>
-      <tbody>${(ocD.partidas||[{}]).map(p=>`<tr>
-        <td><input data-e="cantidad" type="number" step="any" value="${escaparHTML(p.cantidad||"")}"></td>
-        <td><select data-e="unidad">${opciones([""].concat(CAT.unidades),p.unidad)}</select></td>
-        <td><textarea data-e="descripcion" rows="1">${escaparHTML(p.descripcion||"")}</textarea></td>
-        <td><button class="quitar" onclick="this.closest('tr').remove()">×</button></td></tr>`).join("")}</tbody></table>
+      <tbody>${((ords[0].partidas&&ords[0].partidas.length)?ords[0].partidas:[{}]).map(p=>filaEntrega(p)).join("")}</tbody></table>
     <div class="campo" style="margin-top:10px"><label>Resultado de la inspección</label>
       <select id="e-resultado"><option value="conforme">✔ Conforme — cumple los criterios</option><option value="no conforme">⚠️ NO conforme</option></select></div>
     <div class="campo" style="margin-top:8px;display:none" id="e-notas-caja"><label>Notas de no conformidad (obligatorio)</label><textarea id="e-notas" rows="2"></textarea></div>
@@ -678,12 +723,16 @@ function nuevaEntrega(){
     <div class="campo"><label>Nombre</label><input id="e-entrega-nombre"></div>
     <div class="firma-caja" data-firma="ent__e" style="margin-top:6px"><canvas></canvas><div class="ph">Firma de quien entrega</div></div>
     <div class="et" style="margin:12px 0 4px;font-size:.78rem;font-weight:700;color:var(--gris)">INFORMACIÓN DE RECIBIDO (almacén)</div>
-    <div class="campo"><label>Nombre</label><input id="e-recibe-nombre" value="${escaparHTML(USUARIO.nombre)}"></div>
+    <div class="campo"><label>Nombre</label><select id="e-recibe-nombre">${USERS.map(u=>`<option ${u.nombre===USUARIO.nombre?"selected":""}>${escaparHTML(u.nombre)}</option>`).join("")}</select></div>
     <div class="firma-caja" data-firma="ent__r" style="margin-top:6px"><canvas></canvas><div class="ph">Firma de quien recibe</div></div>
     <div class="acciones"><button class="btn fantasma" id="e-cancel">Cancelar</button><button class="btn verde" id="e-ok">💾 Guardar entrega</button></div>
   </div>`;
   document.body.appendChild(fondo);
   fondo.querySelectorAll(".firma-caja").forEach(c=>{ firmasVivas[c.dataset.firma]=crearFirma(c); });
+  fondo.querySelector("#e-orden").onchange=e=>{
+    const o=ords[parseInt(e.target.value)]||{};
+    fondo.querySelector("#e-partidas tbody").innerHTML=((o.partidas&&o.partidas.length)?o.partidas:[{}]).map(p=>filaEntrega(p)).join("");
+  };
   fondo.querySelector("#e-resultado").onchange=e=>{ fondo.querySelector("#e-notas-caja").style.display=e.target.value==="no conforme"?"":"none"; };
   fondo.querySelector("#e-cancel").onclick=()=>fondo.remove();
   fondo.querySelector("#e-ok").onclick=async()=>{
@@ -699,7 +748,9 @@ function nuevaEntrega(){
     if(resultado==="no conforme"&&!notas){ aviso("⚠️ Describe la no conformidad"); return; }
     const fe=firmasVivas["ent__e"], fr=firmasVivas["ent__r"];
     if(fr.estaVacio()){ aviso("⚠️ Falta la firma de quien recibe (almacén)"); return; }
+    const ordSel=ords[parseInt(fondo.querySelector("#e-orden").value)]||{};
     const entrega={fecha:fondo.querySelector("#e-fecha").value, factura:fondo.querySelector("#e-factura").value.trim(),
+      proveedor_id:ordSel.proveedor_id||"", orden_id:ordSel.id||"",
       partidas, resultado, notas,
       entrega_nombre:fondo.querySelector("#e-entrega-nombre").value.trim(),
       recibe_nombre:fondo.querySelector("#e-recibe-nombre").value.trim(),
@@ -721,16 +772,16 @@ async function cerrarRecepcion(){
 // ================= 05 · FACTURAS Y CxP (FO-GDC-06) =================
 function construirCxP(){
   const cuerpo=document.getElementById("cuerpo-cxp");
-  const ocD=sec("oc").datos;
-  if(ocD.estado!=="autorizada"&&ocD.estado!=="enviada"){ cuerpo.innerHTML=`<div class="candado">🔒 Se habilita cuando la orden de compra esté autorizada.</div>`; return; }
+  const ords=ordsActivas();
+  if(!ords.length){ cuerpo.innerHTML=`<div class="candado">🔒 Se habilita cuando al menos una orden de compra esté autorizada.</div>`; return; }
   const d=sec("cxp").datos;
-  const p=provDe(ocD.proveedor_id);
+  const nombresProv=ords.map(o=>{const p=provDe(o.proveedor_id);return p?p.razon_social:"";}).filter(Boolean).join(", ");
   const facturas=d.facturas||[];
   cuerpo.innerHTML=`
-    <div class="bloque"><div class="et">Facturas del expediente (${CAT.versiones.cxp}) — Proveedor: ${escaparHTML(p?p.razon_social:"")} · Crédito ${p?(p.credito_dias||0):0} días</div>
+    <div class="bloque"><div class="et">Facturas del expediente (${CAT.versiones.cxp}) — Proveedores: ${escaparHTML(nombresProv)}</div>
       <div class="ptabla-scroll"><table class="ptabla"><thead>
-        <tr><th>Factura</th><th>Fecha</th><th>Importe</th><th>Vencimiento</th><th>Días</th><th>Autorizada pago</th><th>Pagada</th><th></th></tr></thead>
-        <tbody>${facturas.length?facturas.map((f,i)=>filaFactura(f,i)).join(""):`<tr><td colspan="8" style="color:var(--gris);text-align:center;padding:14px">Sin facturas registradas</td></tr>`}</tbody>
+        <tr><th>Proveedor</th><th>Factura</th><th>Fecha</th><th>Importe</th><th>Vencimiento</th><th>Días</th><th>Autorizada pago</th><th>Pagada</th><th></th></tr></thead>
+        <tbody>${facturas.length?facturas.map((f,i)=>filaFactura(f,i)).join(""):`<tr><td colspan="9" style="color:var(--gris);text-align:center;padding:14px">Sin facturas registradas</td></tr>`}</tbody>
       </table></div>
       <button class="btn primario chico" style="margin-top:10px" onclick="nuevaFactura()">+ Registrar factura</button>
     </div>
@@ -741,6 +792,7 @@ function filaFactura(f,i){
   const dias=f.vencimiento?Math.ceil((new Date(f.vencimiento+"T12:00:00")-new Date())/86400000):null;
   const cl=f.pagada?"":"venc-"+(dias===null?"":(dias<0?"rojo":(dias<=7?"ambar":"")));
   return `<tr>
+    <td>${escaparHTML((provDe(f.proveedor_id)||{}).razon_social||"—")}</td>
     <td><b>${escaparHTML(f.folio||"")}</b></td>
     <td>${fechaCorta(f.fecha)}</td>
     <td class="num">${dinero(f.importe,f.moneda)}</td>
@@ -752,27 +804,31 @@ function filaFactura(f,i){
   </tr>`;
 }
 function nuevaFactura(){
-  const ocD=sec("oc").datos, p=provDe(ocD.proveedor_id);
+  const ords=ordsActivas();
   const fondo=document.createElement("div"); fondo.className="modal-fondo";
   fondo.innerHTML=`<div class="modal"><h2>Registrar factura</h2>
-    <div class="campos" style="grid-template-columns:1fr 1fr">
+    <div class="campo"><label>Orden de compra / proveedor</label>
+      <select id="f-orden">${ords.map((o,x)=>{const p=provDe(o.proveedor_id);return `<option value="${x}">${escaparHTML(p?p.razon_social:"")} · ${dinero(o.total,o.moneda)}</option>`;}).join("")}</select></div>
+    <div class="campos" style="grid-template-columns:1fr 1fr;margin-top:8px">
       <div class="campo"><label>No. de factura</label><input id="f-folio"></div>
       <div class="campo"><label>Fecha de la factura</label><input id="f-fecha" type="date" value="${hoyISO()}"></div>
-      <div class="campo"><label>Moneda</label><select id="f-moneda">${opciones(CAT.monedas,ocD.moneda||"MXN")}</select></div>
-      <div class="campo"><label>Importe</label><input id="f-importe" type="number" step="any" value="${escaparHTML(ocD.total||"")}"></div>
-      <div class="campo" style="grid-column:1/-1"><label>Fecha de vencimiento (auto: fecha + ${p?(p.credito_dias||0):0} días de crédito)</label><input id="f-venc" type="date"></div>
+      <div class="campo"><label>Moneda</label><select id="f-moneda">${opciones(CAT.monedas,ords[0].moneda||"MXN")}</select></div>
+      <div class="campo"><label>Importe</label><input id="f-importe" type="number" step="any" value="${escaparHTML(ords[0].total||"")}"></div>
+      <div class="campo" style="grid-column:1/-1"><label>Fecha de vencimiento (auto: fecha + días de crédito del proveedor)</label><input id="f-venc" type="date"></div>
     </div>
     <div class="acciones"><button class="btn fantasma" id="f-cancel">Cancelar</button><button class="btn primario" id="f-ok">Registrar</button></div>
   </div>`;
   document.body.appendChild(fondo);
-  const calcVenc=()=>{ fondo.querySelector("#f-venc").value=sumaDias(fondo.querySelector("#f-fecha").value, p?(p.credito_dias||0):0); };
+  const ordSel=()=>ords[parseInt(fondo.querySelector("#f-orden").value)]||ords[0];
+  const calcVenc=()=>{ const p=provDe(ordSel().proveedor_id); fondo.querySelector("#f-venc").value=sumaDias(fondo.querySelector("#f-fecha").value, p?(p.credito_dias||0):0); };
   calcVenc(); fondo.querySelector("#f-fecha").onchange=calcVenc;
+  fondo.querySelector("#f-orden").onchange=()=>{ const o=ordSel(); fondo.querySelector("#f-importe").value=o.total||""; fondo.querySelector("#f-moneda").value=o.moneda||"MXN"; calcVenc(); };
   fondo.querySelector("#f-cancel").onclick=()=>fondo.remove();
   fondo.querySelector("#f-ok").onclick=async()=>{
     const f={id:crypto.randomUUID(), folio:fondo.querySelector("#f-folio").value.trim(),
       fecha:fondo.querySelector("#f-fecha").value, moneda:fondo.querySelector("#f-moneda").value,
       importe:fondo.querySelector("#f-importe").value, vencimiento:fondo.querySelector("#f-venc").value,
-      proveedor_id:ocD.proveedor_id, autorizada:false, pagada:false, registrada_por:USUARIO.nombre, version:CAT.versiones.cxp};
+      proveedor_id:ordSel().proveedor_id, orden_id:ordSel().id, autorizada:false, pagada:false, registrada_por:USUARIO.nombre, version:CAT.versiones.cxp};
     if(!f.folio||!f.importe){ aviso("⚠️ Folio e importe son obligatorios"); return; }
     const d={...sec("cxp").datos}; d.facturas=[...(d.facturas||[]),f];
     fondo.remove();

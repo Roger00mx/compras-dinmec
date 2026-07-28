@@ -203,3 +203,15 @@ h1,h2,h3{margin:0 0 .4em}
 .barraprog > i{background:var(--naranja)}
 .filtro.activo{background:var(--naranja);border-color:var(--naranja)}
 .logo-img{height:26px;background:#fff;border-radius:6px;padding:2px 5px}
+
+/* Lista de requisiciones (panel principal) */
+.lista-req{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.fila-req{background:#fff;border:1px solid var(--linea);border-radius:10px;box-shadow:var(--sombra);padding:10px 14px;display:flex;align-items:center;gap:14px;cursor:pointer;transition:.15s}
+.fila-req:hover{transform:translateY(-1px);box-shadow:0 5px 18px rgba(20,40,80,.12)}
+.fr-folio{font-weight:800;color:var(--azul);min-width:150px;font-size:.95rem}
+.fr-desc{flex:1;min-width:0;font-weight:600;font-size:.92rem;overflow:hidden}
+.fr-desc .fr-mas{font-weight:600;font-size:.74rem;color:var(--gris)}
+.fr-sub{font-size:.76rem;color:var(--gris);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fr-der{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.fr-borrar{background:#fdeaea;color:var(--rojo);border:none;border-radius:8px;width:28px;height:28px;cursor:pointer;font-weight:700}
+@media(max-width:640px){.fila-req{flex-wrap:wrap}.fr-folio{min-width:auto}}

@@ -58,10 +58,10 @@ async function inicio(){
   const F=CAT.facturacion;
   const e=escaparHTML;
 
-  function cab(titulo, fo){
+  function cab(titulo, fo, folioTxt){
     return `<div class="doc-cab">
       <div><img src="/logo.png" alt="DINMEC" style="height:46px" onerror="this.outerHTML='<div class=marca>DINMEC</div>'"><div style="font-size:.78rem;color:var(--gris)">DINMEC GROUP SRL DE CV · Sistema de Gestión de Calidad</div></div>
-      <div class="fo"><b>${titulo}</b>${fo}<br>Folio: ${titulo.startsWith("ORDEN")?"OC":"REQ"}-${e(c.folio)}</div>
+      <div class="fo"><b>${titulo}</b>${fo}<br>Folio: ${folioTxt||((titulo.startsWith("ORDEN")?"OC":"REQ")+"-"+e(c.folio))}</div>
     </div>`;
   }
   function firmasHTML(fs){
@@ -113,11 +113,16 @@ async function inicio(){
       ${firmasHTML(sl.firmas)}${leyenda}</div>`;
   }
 
-  // ---------- ORDEN DE COMPRA ----------
+  // ---------- ÓRDENES DE COMPRA (una por proveedor) ----------
   const oc=s("oc");
-  if((oc.datos.partidas||[]).length){
-    const d=oc.datos; const p=prov(d.proveedor_id);
-    html+=`<div class="hoja">${cab("ORDEN DE COMPRA", d.version||CAT.versiones.oc)}
+  const ORDEN=paramURL("orden");
+  const ordsTodas=oc.datos.ordenes || ((oc.datos.partidas||[]).length?[{id:"legacy",...oc.datos}]:[]);
+  let ordsImprimir=ORDEN?ordsTodas.filter(o=>o.id===ORDEN):ordsTodas;
+  for(const d of ordsImprimir){
+    const idx=ordsTodas.indexOf(d);
+    const folioTxt="OC-"+c.folio+(ordsTodas.length>1?("-"+(idx+1)):"");
+    const p=prov(d.proveedor_id);
+    html+=`<div class="hoja">${cab("ORDEN DE COMPRA", d.version||CAT.versiones.oc, folioTxt)}
       <div style="display:flex;gap:20px;flex-wrap:wrap">
         <div style="flex:1;min-width:260px">
           <h2 style="font-size:.8rem">Datos de facturación</h2>
@@ -149,9 +154,10 @@ async function inicio(){
   // ---------- RECEPCIÓN ----------
   const rc=s("recepcion");
   if(DOC!=="oc" && (rc.datos.entregas||[]).length){
-    const d=rc.datos; const p=prov(s("oc").datos.proveedor_id);
+    const d=rc.datos;
+    const provNamesR=ordsTodas.map(o=>prov(o.proveedor_id)).filter(Boolean).map(x=>x.razon_social).join(", ");
     html+=`<div class="hoja">${cab("ENTREGA DE MATERIALES (ALMACÉN)", d.entregas[0]?.version||CAT.versiones.recepcion)}
-      <div class="kv"><div><b>Proveedor</b>${e(p?p.razon_social:"—")}</div><div><b>Estado</b>${d.estado==="total"?"Recepción completa":"Parcial"}</div></div>
+      <div class="kv"><div><b>Proveedores</b>${e(provNamesR||"—")}</div><div><b>Estado</b>${d.estado==="total"?"Recepción completa":"Parcial"}</div></div>
       ${d.entregas.map((en,i)=>`
         <h2 style="font-size:.85rem;margin-top:12px">Entrega ${i+1} · ${fechaCorta(en.fecha)} · Factura: ${e(en.factura||"—")} · ${en.resultado==="no conforme"?'<span class="chipNC">NO CONFORME ⚠</span>':"Conforme ✔"}</h2>
         <table><thead><tr><th style="width:90px">Cantidad</th><th style="width:80px">Unidad</th><th>Descripción</th></tr></thead>
@@ -167,11 +173,12 @@ async function inicio(){
   // ---------- CxP ----------
   const cx=s("cxp");
   if(DOC!=="oc" && (cx.datos.facturas||[]).length){
-    const d=cx.datos; const p=prov(s("oc").datos.proveedor_id);
+    const d=cx.datos;
+    const provNamesC=ordsTodas.map(o=>prov(o.proveedor_id)).filter(Boolean).map(x=>x.razon_social).join(", ");
     html+=`<div class="hoja">${cab("CUENTAS POR PAGAR", CAT.versiones.cxp)}
-      <div class="kv"><div><b>Proveedor</b>${e(p?p.razon_social:"—")}</div><div><b>Días de crédito</b>${p?(p.credito_dias||0):0}</div></div>
-      <table><thead><tr><th>Factura</th><th>Fecha</th><th>Importe</th><th>Vencimiento</th><th>Autorizado para pago</th><th>Pagada</th></tr></thead>
-      <tbody>${d.facturas.map(f=>`<tr><td>${e(f.folio||"")}</td><td>${fechaCorta(f.fecha)}</td><td style="text-align:right">${dinero(f.importe,f.moneda)}</td><td>${fechaCorta(f.vencimiento)}</td>
+      <div class="kv"><div><b>Proveedores</b>${e(provNamesC||"—")}</div></div>
+      <table><thead><tr><th>Proveedor</th><th>Factura</th><th>Fecha</th><th>Importe</th><th>Vencimiento</th><th>Autorizado para pago</th><th>Pagada</th></tr></thead>
+      <tbody>${d.facturas.map(f=>`<tr><td>${e((prov(f.proveedor_id)||{}).razon_social||"")}</td><td>${e(f.folio||"")}</td><td>${fechaCorta(f.fecha)}</td><td style="text-align:right">${dinero(f.importe,f.moneda)}</td><td>${fechaCorta(f.vencimiento)}</td>
         <td>${f.autorizada?("✔ "+e(f.autorizada_por||"")):"Pendiente"}</td><td>${f.pagada?("✔ "+fechaCorta(f.fecha_pago)):"—"}</td></tr>`).join("")}</tbody></table>
       ${leyenda}</div>`;
   }

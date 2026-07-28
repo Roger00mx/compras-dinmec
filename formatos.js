@@ -27,12 +27,13 @@ const ROLES = [
   "Gerente de producción",
 ];
 
-// ¿Quién puede AUTORIZAR (requisición, selección, OC, pago)?  PS-GDC-01: Dirección general.
+// ¿Quién puede AUTORIZAR (requisición, selección, OC, pago)?
+// Dirección general (Rogelio) y Gerente de administración y finanzas (Rosario).
 // El administrador de la app también puede (respaldo operativo).
 function puedeAutorizar(usuario) {
   if (!usuario) return false;
   if (usuario.rol_app === "admin") return true;
-  return /direc/i.test(usuario.rol || "");
+  return /direc|administraci\S*\s+y\s+finanzas/i.test(usuario.rol || "");
 }
 
 // Tipos de compra del FO-GDC-01

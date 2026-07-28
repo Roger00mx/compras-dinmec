@@ -190,13 +190,14 @@ function resumenExpediente(sec) {
   const cxp = sec.cxp?.datos || {};
   if (req.estado === "rechazada") return { etiqueta: "Rechazada", color: "rojo", pct: 0 };
   let pasos = 0;
-  if (req.estado === "autorizada") pasos = 1; else if (req.estado === "solicitada") return { etiqueta: "Req. en autorización", color: "ambar", pct: 8 };
+  if (req.estado === "autorizada") pasos = 1; else if (req.estado === "solicitada") return { etiqueta: "Pendiente de autorizar", color: "ambar", pct: 8 };
   else return { etiqueta: "Borrador", color: "gris", pct: 0 };
-  let etiqueta = "Req. autorizada";
+  let etiqueta = "Requisición autorizada";
   if (sel.estado === "aprobada") { pasos = 2; etiqueta = "Selección aprobada"; }
   else if ((sel.cotizaciones || []).length) return { etiqueta: "En cotización", color: "ambar", pct: 25 };
-  if (oc.estado === "enviada") { pasos = 3; etiqueta = "OC enviada"; }
-  else if (oc.estado === "autorizada") { pasos = 3; etiqueta = "OC autorizada"; }
+  const ords = oc.ordenes || (oc.partidas ? [oc] : []);
+  if (ords.length && ords.every(o => o.estado === "enviada")) { pasos = 3; etiqueta = "OC enviada"; }
+  else if (ords.some(o => o.estado === "autorizada" || o.estado === "enviada")) { pasos = 3; etiqueta = "OC autorizada"; }
   const entregas = rec.entregas || [];
   const noConforme = entregas.some(e => e.resultado === "no conforme");
   if (rec.estado === "total") { pasos = 4; etiqueta = noConforme ? "Recibida (con NC)" : "Recibida total"; }
@@ -224,8 +225,16 @@ function validarPermisos(yo, seccion, previo, nuevo) {
     return "Solo Dirección general puede autorizar o rechazar la requisición";
   if (seccion === "seleccion" && cambia("estado", "aprobada") && !esAut)
     return "Solo Dirección general puede aprobar la selección de proveedor";
-  if (seccion === "oc" && cambia("estado", "autorizada") && !esAut)
-    return "Solo Dirección general puede autorizar la orden de compra";
+  if (seccion === "oc") {
+    if (cambia("estado", "autorizada") && !esAut) return "Solo Dirección o Admón. y finanzas pueden autorizar la orden de compra";
+    const po = p.ordenes || [], no_ = n.ordenes || [];
+    for (const o of no_) {
+      const antes = po.find((x) => x.id === o.id);
+      const antesEstado = antes ? antes.estado : "";
+      if (o.estado === "autorizada" && antesEstado !== "autorizada" && antesEstado !== "enviada" && !esAut)
+        return "Solo Dirección o Admón. y finanzas pueden autorizar la orden de compra";
+    }
+  }
   if (seccion === "cxp") {
     const pf = p.facturas || [], nf = n.facturas || [];
     for (let i = 0; i < nf.length; i++) {
@@ -353,13 +362,20 @@ const servidor = http.createServer(async (req, res) => {
       });
     }
 
+    // ---- Lista de usuarios para selectores de firmas (cualquier usuario con sesión) ----
+    if (ruta === "/api/usuarios-lista" && req.method === "GET") {
+      const lista = db.prepare("SELECT nombre,rol,rol_app FROM usuarios ORDER BY nombre").all();
+      return json(res, 200, lista.map((u) => ({ nombre: u.nombre, rol: u.rol, autoriza: F.puedeAutorizar(u) })));
+    }
+
     // ---- Expedientes de compra ----
     if (ruta === "/api/compras" && req.method === "GET") {
       const lista = db.prepare("SELECT * FROM compras ORDER BY actualizado DESC").all();
       const out = lista.map(c => {
         const sec = seccionesDe(c.id);
         const req_ = sec.requisicion?.datos || {};
-        return { ...c, resumen: resumenExpediente(sec), fecha_requerida: req_.fecha_requerida || "", tipo_compra: req_.tipo_compra || "", partidas: (req_.partidas || []).length };
+        const parts = req_.partidas || [];
+        return { ...c, resumen: resumenExpediente(sec), fecha_requerida: req_.fecha_requerida || "", tipo_compra: req_.tipo_compra || "", partidas: parts.length, descripcion1: (parts[0] || {}).descripcion || "" };
       });
       return json(res, 200, out);
     }
