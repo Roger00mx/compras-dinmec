@@ -272,7 +272,7 @@ const servidor = http.createServer(async (req, res) => {
 
     // ---- Autenticación (rutas públicas) ----
     if (ruta === "/api/estado" && req.method === "GET") {
-      return json(res, 200, { configurado: hayUsuarios(), yo: yo ? { usuario: yo.usuario, nombre: yo.nombre, rol: yo.rol, rol_app: yo.rol_app, autoriza: F.puedeAutorizar(yo) } : null });
+      return json(res, 200, { configurado: hayUsuarios(), yo: yo ? { usuario: yo.usuario, nombre: yo.nombre, rol: yo.rol, rol_app: yo.rol_app, autoriza: F.puedeAutorizar(yo), veTodo: F.puedeVerTodo(yo) } : null });
     }
     if (ruta === "/api/setup" && req.method === "POST") {
       if (hayUsuarios()) return json(res, 403, { error: "Ya está configurado" });
@@ -391,6 +391,11 @@ const servidor = http.createServer(async (req, res) => {
     if (mCompra && req.method === "GET") {
       const full = obtenerCompra(mCompra[1]);
       if (!full) return json(res, 404, { error: "Expediente no encontrado" });
+      // Confidencialidad: quien no ve todo, solo recibe la requisición
+      if (!F.puedeVerTodo(yo)) {
+        full.secciones = { requisicion: full.secciones.requisicion || { datos: {}, firmas: [] } };
+        full.archivos = full.archivos.filter((a) => a.seccion === "requisicion");
+      }
       return json(res, 200, full);
     }
     if (mCompra && req.method === "PUT") {
@@ -434,6 +439,7 @@ const servidor = http.createServer(async (req, res) => {
       const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
       const { seccion, datos, firmas } = b;
       if (!["requisicion", "seleccion", "oc", "recepcion", "cxp"].includes(seccion)) return json(res, 400, { error: "Sección inválida" });
+      if (seccion !== "requisicion" && !F.puedeVerTodo(yo)) return json(res, 403, { error: "No tienes acceso a esta etapa del proceso (información confidencial)" });
       const previo = seccionesDe(mSec[1])[seccion];
       const errPerm = validarPermisos(yo, seccion, previo, datos);
       if (errPerm) return json(res, 403, { error: errPerm });
@@ -457,6 +463,7 @@ const servidor = http.createServer(async (req, res) => {
     if (mArch && req.method === "POST") {
       const buf = await leerCuerpo(req);
       const seccion = url.searchParams.get("seccion") || "";
+      if (seccion !== "requisicion" && !F.puedeVerTodo(yo)) return json(res, 403, { error: "No tienes acceso a esta etapa del proceso" });
       const nombre = url.searchParams.get("nombre") || "archivo.pdf";
       const ext = (path.extname(nombre) || ".pdf").toLowerCase();
       const permitidas = [".pdf", ".xml", ".jpg", ".jpeg", ".png", ".webp", ".xlsx", ".docx"];
@@ -484,11 +491,15 @@ const servidor = http.createServer(async (req, res) => {
     const mArchGet = ruta.match(/^\/archivo\/(.+)$/);
     if (mArchGet && req.method === "GET") {
       const base = path.basename(mArchGet[1]);
-      const fila = db.prepare("SELECT nombre_original FROM archivos WHERE archivo=?").get(base);
+      const fila = db.prepare("SELECT nombre_original, seccion FROM archivos WHERE archivo=?").get(base);
+      if (fila && fila.seccion !== "requisicion" && !F.puedeVerTodo(yo)) return json(res, 403, { error: "Acceso restringido" });
       return servirArchivo(res, path.join(DIR_ARCHIVOS, base), url.searchParams.get("dl") ? (fila?.nombre_original || base) : null);
     }
 
-    // ---- Proveedores (FO-GDC-05) ----
+    // ---- Proveedores (FO-GDC-05) — solo quienes ven todo el proceso ----
+    if ((ruta === "/api/proveedores" || ruta.startsWith("/api/proveedor/")) && !F.puedeVerTodo(yo)) {
+      return json(res, 403, { error: "Acceso restringido a Dirección / Admón. y finanzas / Responsable de almacén" });
+    }
     if (ruta === "/api/proveedores" && req.method === "GET") {
       const lista = db.prepare("SELECT * FROM proveedores ORDER BY razon_social").all();
       const out = lista.map(p => {
@@ -554,6 +565,9 @@ const servidor = http.createServer(async (req, res) => {
     }
 
     // ---- Cuentas por pagar global (FO-GDC-06) ----
+    if (ruta === "/api/cxp" && req.method === "GET" && !F.puedeVerTodo(yo)) {
+      return json(res, 403, { error: "Acceso restringido a Dirección / Admón. y finanzas / Responsable de almacén" });
+    }
     if (ruta === "/api/cxp" && req.method === "GET") {
       const provs = {};
       for (const c of db.prepare("SELECT * FROM compras").all()) {
@@ -575,7 +589,10 @@ const servidor = http.createServer(async (req, res) => {
     // ---- Bitácora ----
     const mBit = ruta.match(/^\/api\/bitacora\/([^/]+)$/);
     if (mBit && req.method === "GET") {
-      return json(res, 200, db.prepare("SELECT * FROM bitacora WHERE compra_id=? ORDER BY fecha DESC").all(mBit[1]));
+      let filas = db.prepare("SELECT * FROM bitacora WHERE compra_id=? ORDER BY fecha DESC").all(mBit[1]);
+      // Confidencialidad: los roles restringidos solo ven movimientos de la requisición
+      if (!F.puedeVerTodo(yo)) filas = filas.filter((b) => /requisicion|Expediente|folio/i.test(b.detalle || "") || b.accion === "Crear");
+      return json(res, 200, filas);
     }
 
     // ---- Sincronización en vivo ----

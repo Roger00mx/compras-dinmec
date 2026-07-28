@@ -36,6 +36,15 @@ function puedeAutorizar(usuario) {
   return /direc|administraci\S*\s+y\s+finanzas/i.test(usuario.rol || "");
 }
 
+// ¿Quién puede VER todo el proceso (selección, OC, recepción, facturas, proveedores)?
+// Dirección general, Gerente de administración y finanzas y Responsable de almacén.
+// Los demás (almacén general, mantenimiento, etc.) solo ven la requisición: lo demás es confidencial.
+function puedeVerTodo(usuario) {
+  if (!usuario) return false;
+  if (usuario.rol_app === "admin") return true;
+  return /direc|administraci\S*\s+y\s+finanzas|responsable\s+de\s+almac/i.test(usuario.rol || "");
+}
+
 // Tipos de compra del FO-GDC-01
 const TIPOS_COMPRA = ["Metales", "Herramientas", "Tornillería", "Servicios / Tratamientos", "Materiales auxiliares", "Consumibles"];
 const CLASE_COMPRA = ["Directa", "Indirecta"]; // definiciones del PS-GDC-01
@@ -113,7 +122,7 @@ const PASOS_EXPEDIENTE = [
 ];
 
 module.exports = {
-  VERSIONES, ROLES, puedeAutorizar,
+  VERSIONES, ROLES, puedeAutorizar, puedeVerTodo,
   TIPOS_COMPRA, CLASE_COMPRA, UNIDADES,
   USO_CFDI, FORMA_PAGO, METODO_PAGO, CONDICIONES_PAGO, MONEDAS, IVA_PORC,
   FACTURACION, CRITERIOS_SELECCION, CRITERIOS_EVALUACION, CLASIFICACIONES, clasificar,
