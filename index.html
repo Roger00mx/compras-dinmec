@@ -53,6 +53,7 @@ async function inicio(){
   document.getElementById("usuario").textContent = "👤 " + USUARIO.nombre;
   await cargar();
   conectarEnVivo(()=>cargar());
+  if(paramURL("nueva")) nuevaCompra();
 }
 
 function menuUsuario(){

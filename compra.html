@@ -15,6 +15,8 @@
 <div class="barra">
   <div class="logo" style="cursor:pointer" onclick="location.href='index.html'">← <img src="/logo.png" alt="DINMEC" class="logo-img" onerror="this.outerHTML='<b>DINMEC</b>'"> <span>Compras SGC</span></div>
   <div class="crece"></div>
+  <button class="btn chico" style="background:rgba(255,255,255,.16);color:#fff;border:none" onclick="location.href='index.html'">🏠 INICIO</button>
+  <button class="btn chico" style="background:var(--naranja);color:#fff;border:none" onclick="location.href='index.html?nueva=1'">➕ NVA REQUISICIÓN</button>
   <div class="envivo"><i></i> En vivo</div>
   <div class="usuario" id="usuario">…</div>
 </div>
@@ -446,10 +448,37 @@ function cotizacionHTML(c,i,e){
       <div class="campo"><label>IVA (auto ${CAT.iva}%)</label><input data-c="iva" readonly value="${escaparHTML(c.iva??"")}"></div>
       <div class="campo"><label>Total</label><input data-c="total" readonly value="${escaparHTML(c.total??"")}" style="font-weight:700"></div>
     </div>
+    <div class="et" style="margin-top:8px;font-size:.75rem;color:var(--gris);font-weight:700">COTIZACIÓN DEL PROVEEDOR (PDF o foto del correo)</div>
+    <div class="adj-grid" data-adjcot="${i}">
+      ${c.proveedor_id?DATA.archivos.filter(a=>a.seccion==="cot:"+c.proveedor_id).map(a=>`<div class="adj-item">📎 <a href="${a.url}" target="_blank">${escaparHTML(a.nombre)}</a>${e?`<button onclick="borrarAdjuntoCot('${a.id}',this)" title="Quitar">×</button>`:""}</div>`).join(""):""}
+      ${e?`<label class="adj-add">📎 Adjuntar cotización<input type="file" accept=".pdf,.xml,.jpg,.jpeg,.png,.webp" onchange="subirAdjuntoCot(event,${i})"></label>`:""}
+    </div>
     <div class="et" style="margin-top:8px;font-size:.75rem;color:var(--gris);font-weight:700">CRITERIOS QUE CUMPLE</div>
     <div class="criterios">${cri.map(cr=>`<label><input type="checkbox" data-cri="${cr}" ${(c.criterios||[]).includes(cr)?"checked":""} ${e?"":"disabled"}>${cr}</label>`).join("")}</div>
     ${e?`<div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn peligro chico" onclick="this.closest('.cotiz').remove();comparativo()">Quitar cotización</button></div>`:""}
   </div>`;
+}
+async function subirAdjuntoCot(ev,i){
+  const caja=document.querySelector(`.cotiz[data-i="${i}"]`);
+  const pid=caja.querySelector('[data-c="proveedor_id"]')?.value||caja.dataset.pid||"";
+  if(!pid){ aviso("⚠️ Primero elige el proveedor de esta cotización"); ev.target.value=""; return; }
+  const file=ev.target.files[0]; if(!file) return;
+  aviso("Subiendo cotización…");
+  const buf=await file.arrayBuffer();
+  const q=new URLSearchParams({seccion:"cot:"+pid, nombre:file.name});
+  const r=await fetch("/api/compra/"+ID+"/archivo?"+q,{method:"POST",headers:{"Content-Type":"application/octet-stream"},body:buf}).then(x=>x.json());
+  if(r.error){ aviso("⚠️ "+r.error); return; }
+  DATA.archivos.push(r);
+  caja.querySelector(`[data-adjcot="${i}"]`).insertAdjacentHTML("afterbegin",
+    `<div class="adj-item">📎 <a href="${r.url}" target="_blank">${escaparHTML(r.nombre)}</a><button onclick="borrarAdjuntoCot('${r.id}',this)" title="Quitar">×</button></div>`);
+  ev.target.value="";
+  aviso("Cotización adjuntada ✓");
+}
+async function borrarAdjuntoCot(id,btn){
+  if(!confirm("¿Quitar este archivo?")) return;
+  await api.del("/api/archivo/"+id);
+  DATA.archivos=DATA.archivos.filter(a=>a.id!==id);
+  btn.closest(".adj-item").remove();
 }
 function calcCotN(i){
   const caja=document.querySelector(`.cotiz[data-i="${i}"]`); if(!caja) return;
