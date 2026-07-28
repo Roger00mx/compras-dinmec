@@ -74,6 +74,7 @@ async function inicio(){
   document.getElementById("usuario").textContent="👤 "+USUARIO.nombre;
   CAT=await api.get("/api/catalogos");
   PROVS=await api.get("/api/proveedores");
+  if(PROVS.error) PROVS=[];
   USERS=await api.get("/api/usuarios-lista");
   if(USERS.error) USERS=[];
   await cargar();
@@ -146,7 +147,8 @@ function subEtiqueta(s){
 }
 function pintarSecciones(){
   const abiertaAntes=document.querySelector(".tarea.abierta")?.id;
-  document.getElementById("secciones").innerHTML=SECS.map(s=>{
+  const visibles=USUARIO.veTodo?SECS:SECS.filter(s=>s.id==="requisicion");
+  document.getElementById("secciones").innerHTML=visibles.map(s=>{
     const listo=estadoIcono(s)==="✅";
     return `<div class="tarea ${listo?"lista":""}" id="sec-${s.id}">
       <div class="tarea-cab" onclick="alternar('${s.id}')">
@@ -159,7 +161,7 @@ function pintarSecciones(){
       </div>
       <div class="tarea-cuerpo" id="cuerpo-${s.id}"></div>
     </div>`;
-  }).join("");
+  }).join("")+(USUARIO.veTodo?"":`<div class="candado" style="margin-top:12px">🔒 Las etapas de selección de proveedor, órdenes de compra, recepción y facturas son gestionadas por Compras y Dirección (información confidencial).</div>`);
   if(abiertaAntes){ const el=document.getElementById(abiertaAntes); if(el){ el.classList.add("abierta"); construir(abiertaAntes.replace("sec-","")); } }
 }
 function alternar(id){

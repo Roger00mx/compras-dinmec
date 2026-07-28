@@ -55,7 +55,7 @@ async function inicio(){
 }
 async function cargar(){
   DATA=await api.get("/api/proveedor/"+ID);
-  if(DATA.error){ document.getElementById("titulo").textContent="Proveedor no encontrado"; return; }
+  if(DATA.error){ document.getElementById("titulo").textContent=DATA.error.includes("restringido")?"🔒 Acceso restringido":"Proveedor no encontrado"; return; }
   const p=DATA.proveedor;
   document.getElementById("titulo").textContent=p.razon_social;
   const chip=document.getElementById("chipEstatus");

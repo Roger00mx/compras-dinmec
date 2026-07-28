@@ -37,8 +37,9 @@ async function inicio(){
   CAT=await api.get("/api/catalogos");
   document.getElementById("chipFo").textContent=CAT.versiones.cxp;
   DATA=await api.get("/api/cxp");
+  if(DATA.error){ document.getElementById("lista").innerHTML=`<div class="vacio">🔒 ${escaparHTML(DATA.error)}</div>`; DATA=[]; return; }
   pintar();
-  conectarEnVivo(async()=>{ DATA=await api.get("/api/cxp"); pintar(); });
+  conectarEnVivo(async()=>{ DATA=await api.get("/api/cxp"); if(!DATA.error) pintar(); });
 }
 function diasPara(f){ return f.vencimiento?Math.ceil((new Date(f.vencimiento+"T12:00:00")-new Date())/86400000):null; }
 function bucket(f){

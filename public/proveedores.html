@@ -39,7 +39,11 @@ async function inicio(){
   await cargar();
   if(paramURL("nuevo")) nuevoProveedor();
 }
-async function cargar(){ LISTA=await api.get("/api/proveedores"); pintar(); }
+async function cargar(){
+  LISTA=await api.get("/api/proveedores");
+  if(LISTA.error){ document.getElementById("lista").innerHTML=`<div class="vacio">🔒 ${escaparHTML(LISTA.error)}</div>`; LISTA=[]; return; }
+  pintar();
+}
 
 function colorClasif(c){
   if(!c) return "gris";
