@@ -76,7 +76,21 @@ db.exec(`
 {
   const cols = db.prepare("PRAGMA table_info(compras)").all().map((c) => c.name);
   if (!cols.includes("destino")) db.exec("ALTER TABLE compras ADD COLUMN destino TEXT");
+  const colsU = db.prepare("PRAGMA table_info(usuarios)").all().map((c) => c.name);
+  if (!colsU.includes("finanzas")) db.exec("ALTER TABLE usuarios ADD COLUMN finanzas INTEGER DEFAULT 0");
 }
+// Módulo FINANZAS (control de cajas y gastos)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cajas (
+    id TEXT PRIMARY KEY, nombre TEXT, creado TEXT
+  );
+  CREATE TABLE IF NOT EXISTS movimientos (
+    id TEXT PRIMARY KEY,
+    caja_id TEXT, tipo TEXT, concepto TEXT, importe REAL,
+    archivo TEXT, fecha TEXT, usuario TEXT
+  );
+`);
+const puedeFinanzas = (u) => !!u && (u.rol_app === "admin" || u.finanzas === 1);
 
 // ---------- Utilidades ----------
 const ahora = () => new Date().toISOString();
@@ -139,7 +153,7 @@ function usuarioDeSesion(req) {
   const s = db.prepare("SELECT * FROM sesiones WHERE token=?").get(tok);
   if (!s) return null;
   if (s.expira && s.expira < ahora()) { db.prepare("DELETE FROM sesiones WHERE token=?").run(tok); return null; }
-  return db.prepare("SELECT id,usuario,nombre,rol,rol_app FROM usuarios WHERE id=?").get(s.usuario_id) || null;
+  return db.prepare("SELECT id,usuario,nombre,rol,rol_app,finanzas FROM usuarios WHERE id=?").get(s.usuario_id) || null;
 }
 function hayUsuarios() { return db.prepare("SELECT COUNT(*) c FROM usuarios").get().c > 0; }
 
@@ -272,7 +286,7 @@ const servidor = http.createServer(async (req, res) => {
 
     // ---- Autenticación (rutas públicas) ----
     if (ruta === "/api/estado" && req.method === "GET") {
-      return json(res, 200, { configurado: hayUsuarios(), yo: yo ? { usuario: yo.usuario, nombre: yo.nombre, rol: yo.rol, rol_app: yo.rol_app, autoriza: F.puedeAutorizar(yo), veTodo: F.puedeVerTodo(yo) } : null });
+      return json(res, 200, { configurado: hayUsuarios(), yo: yo ? { usuario: yo.usuario, nombre: yo.nombre, rol: yo.rol, rol_app: yo.rol_app, autoriza: F.puedeAutorizar(yo), veTodo: F.puedeVerTodo(yo), finanzas: puedeFinanzas(yo) } : null });
     }
     if (ruta === "/api/setup" && req.method === "POST") {
       if (hayUsuarios()) return json(res, 403, { error: "Ya está configurado" });
@@ -303,14 +317,14 @@ const servidor = http.createServer(async (req, res) => {
     // ---- Gestión de usuarios (solo admin) ----
     if (ruta === "/api/usuarios") {
       if (!yo || yo.rol_app !== "admin") return json(res, 403, { error: "Solo administrador" });
-      if (req.method === "GET") return json(res, 200, db.prepare("SELECT id,usuario,nombre,rol,rol_app,creado FROM usuarios ORDER BY creado").all());
+      if (req.method === "GET") return json(res, 200, db.prepare("SELECT id,usuario,nombre,rol,rol_app,finanzas,creado FROM usuarios ORDER BY creado").all());
       if (req.method === "POST") {
         const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
         if (!b.usuario || !b.clave) return json(res, 400, { error: "Faltan usuario o contraseña" });
         const existe = db.prepare("SELECT id FROM usuarios WHERE usuario=?").get(b.usuario.toLowerCase().trim());
         if (existe) return json(res, 409, { error: "Ese usuario ya existe" });
-        db.prepare("INSERT INTO usuarios (id,usuario,nombre,rol,clave,rol_app,creado) VALUES (?,?,?,?,?,?,?)")
-          .run(uid(), b.usuario.toLowerCase().trim(), b.nombre || b.usuario, b.rol || "", hashClave(b.clave), b.rol_app === "admin" ? "admin" : "usuario", ahora());
+        db.prepare("INSERT INTO usuarios (id,usuario,nombre,rol,clave,rol_app,finanzas,creado) VALUES (?,?,?,?,?,?,?,?)")
+          .run(uid(), b.usuario.toLowerCase().trim(), b.nombre || b.usuario, b.rol || "", hashClave(b.clave), b.rol_app === "admin" ? "admin" : "usuario", b.finanzas ? 1 : 0, ahora());
         return json(res, 200, { ok: true });
       }
     }
@@ -325,8 +339,9 @@ const servidor = http.createServer(async (req, res) => {
       }
       if (req.method === "PUT") {
         const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
-        if (!b.clave) return json(res, 400, { error: "Falta contraseña" });
-        db.prepare("UPDATE usuarios SET clave=? WHERE id=?").run(hashClave(b.clave), mUsr[1]);
+        if (b.clave) db.prepare("UPDATE usuarios SET clave=? WHERE id=?").run(hashClave(b.clave), mUsr[1]);
+        if (b.finanzas !== undefined) db.prepare("UPDATE usuarios SET finanzas=? WHERE id=?").run(b.finanzas ? 1 : 0, mUsr[1]);
+        if (!b.clave && b.finanzas === undefined) return json(res, 400, { error: "Nada que actualizar" });
         return json(res, 200, { ok: true });
       }
     }
@@ -345,7 +360,7 @@ const servidor = http.createServer(async (req, res) => {
     }
 
     // ---- Protección: API de datos y archivos requieren sesión ----
-    if ((ruta.startsWith("/api/") || ruta.startsWith("/archivo/")) && !yo) {
+    if ((ruta.startsWith("/api/") || ruta.startsWith("/archivo/") || ruta.startsWith("/finimg/")) && !yo) {
       return json(res, 401, { error: "Necesitas iniciar sesión" });
     }
 
@@ -593,6 +608,69 @@ const servidor = http.createServer(async (req, res) => {
       // Confidencialidad: los roles restringidos solo ven movimientos de la requisición
       if (!F.puedeVerTodo(yo)) filas = filas.filter((b) => /requisicion|Expediente|folio/i.test(b.detalle || "") || b.accion === "Crear");
       return json(res, 200, filas);
+    }
+
+    // ---- FINANZAS: control de cajas y gastos (acceso individual asignado por admin) ----
+    if ((ruta.startsWith("/api/fin/") || ruta.startsWith("/finimg/")) && !puedeFinanzas(yo)) {
+      return json(res, 403, { error: "Acceso restringido: pide al administrador que te active Finanzas" });
+    }
+    if (ruta === "/api/fin/cajas" && req.method === "GET") {
+      const cajas = db.prepare("SELECT * FROM cajas ORDER BY creado").all();
+      return json(res, 200, cajas.map((cj) => {
+        const r = db.prepare("SELECT COALESCE(SUM(CASE WHEN tipo='INGRESO' THEN importe ELSE -importe END),0) s FROM movimientos WHERE caja_id=?").get(cj.id);
+        return { ...cj, saldo: r.s };
+      }));
+    }
+    if (ruta === "/api/fin/cajas" && req.method === "POST") {
+      if (yo.rol_app !== "admin") return json(res, 403, { error: "Solo administrador puede crear cajas" });
+      const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
+      if (!b.nombre || !b.nombre.trim()) return json(res, 400, { error: "Falta el nombre de la caja" });
+      const id = uid();
+      db.prepare("INSERT INTO cajas (id,nombre,creado) VALUES (?,?,?)").run(id, b.nombre.trim(), ahora());
+      return json(res, 200, { id });
+    }
+    if (ruta === "/api/fin/movimientos" && req.method === "GET") {
+      const caja = url.searchParams.get("caja") || "";
+      let filas = caja
+        ? db.prepare("SELECT * FROM movimientos WHERE caja_id=? ORDER BY fecha ASC, rowid ASC").all(caja)
+        : db.prepare("SELECT * FROM movimientos ORDER BY fecha ASC, rowid ASC").all();
+      const saldos = {};
+      filas = filas.map((m) => {
+        saldos[m.caja_id] = (saldos[m.caja_id] || 0) + (m.tipo === "INGRESO" ? m.importe : -m.importe);
+        return { ...m, saldo: saldos[m.caja_id] };
+      });
+      return json(res, 200, filas.reverse());
+    }
+    if (ruta === "/api/fin/movimientos" && req.method === "POST") {
+      const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
+      if (!b.caja_id || !b.tipo || !(parseFloat(b.importe) > 0)) return json(res, 400, { error: "Caja, tipo e importe (mayor a 0) son obligatorios" });
+      const id = uid();
+      db.prepare("INSERT INTO movimientos (id,caja_id,tipo,concepto,importe,archivo,fecha,usuario) VALUES (?,?,?,?,?,?,?,?)")
+        .run(id, b.caja_id, b.tipo === "INGRESO" ? "INGRESO" : "GASTO", b.concepto || "", parseFloat(b.importe), "", b.fecha || ahora(), yo.nombre);
+      return json(res, 200, { id });
+    }
+    const mMovImg = ruta.match(/^\/api\/fin\/movimiento\/([^/]+)\/imagen$/);
+    if (mMovImg && req.method === "POST") {
+      const buf = await leerCuerpo(req);
+      const nombre = url.searchParams.get("nombre") || "comprobante.jpg";
+      const ext = (path.extname(nombre) || ".jpg").toLowerCase();
+      if (![".jpg", ".jpeg", ".png", ".webp", ".pdf"].includes(ext)) return json(res, 400, { error: "Tipo de archivo no permitido: " + ext });
+      const archivo = "fin_" + uid() + ext;
+      fs.writeFileSync(path.join(DIR_ARCHIVOS, archivo), buf);
+      db.prepare("UPDATE movimientos SET archivo=? WHERE id=?").run(archivo, mMovImg[1]);
+      return json(res, 200, { ok: true, archivo });
+    }
+    const mMovDel = ruta.match(/^\/api\/fin\/movimiento\/([^/]+)$/);
+    if (mMovDel && req.method === "DELETE") {
+      if (yo.rol_app !== "admin") return json(res, 403, { error: "Solo administrador puede eliminar movimientos" });
+      const m = db.prepare("SELECT archivo FROM movimientos WHERE id=?").get(mMovDel[1]);
+      if (m && m.archivo) { try { fs.unlinkSync(path.join(DIR_ARCHIVOS, m.archivo)); } catch (_) {} }
+      db.prepare("DELETE FROM movimientos WHERE id=?").run(mMovDel[1]);
+      return json(res, 200, { ok: true });
+    }
+    const mFinImg = ruta.match(/^\/finimg\/(.+)$/);
+    if (mFinImg && req.method === "GET") {
+      return servirArchivo(res, path.join(DIR_ARCHIVOS, path.basename(mFinImg[1])));
     }
 
     // ---- Sincronización en vivo ----

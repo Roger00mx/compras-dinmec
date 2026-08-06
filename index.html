@@ -26,8 +26,9 @@
   <div class="seccion-tit">
     <h2>Compras</h2>
     <div class="crece"></div>
-    <button class="btn fantasma chico" onclick="location.href='proveedores.html'">🏭 Proveedores</button>
-    <button class="btn fantasma chico" onclick="location.href='cxp.html'">💳 Cuentas por pagar</button>
+    <button class="btn fantasma chico" id="btnProv" style="display:none" onclick="location.href='proveedores.html'">🏭 Proveedores</button>
+    <button class="btn fantasma chico" id="btnCxp" style="display:none" onclick="location.href='cxp.html'">💳 Cuentas por pagar</button>
+    <button class="btn fantasma chico" id="btnFin" style="display:none" onclick="location.href='finanzas.html'">💰 Finanzas</button>
     <button class="btn primario" onclick="nuevaCompra()">+ Nueva requisición</button>
   </div>
 
@@ -51,6 +52,8 @@ async function inicio(){
   USUARIO = await exigirSesion();
   if(!USUARIO) return;
   document.getElementById("usuario").textContent = "👤 " + USUARIO.nombre;
+  if(USUARIO.veTodo){ document.getElementById("btnProv").style.display=""; document.getElementById("btnCxp").style.display=""; }
+  if(USUARIO.finanzas) document.getElementById("btnFin").style.display="";
   await cargar();
   conectarEnVivo(()=>cargar());
   if(paramURL("nueva")) nuevaCompra();
