@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Finanzas — Compras SGC</title>
+<meta name="theme-color" content="#13407a">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+<style>
+  .mov{padding:10px 14px;display:flex;align-items:center;gap:12px;border-bottom:2px solid var(--linea);border-left:5px solid var(--gris)}
+  .mov.ing{border-left-color:var(--verde)}
+  .mov.gas{border-left-color:var(--rojo)}
+  .mov .mfecha{font-size:.76rem;color:var(--gris);min-width:110px}
+  .mov .mtipo{font-weight:800;font-size:.78rem;min-width:70px}
+  .mov.ing .mtipo{color:var(--verde)}
+  .mov.gas .mtipo{color:var(--rojo)}
+  .mov .mcon{flex:1;min-width:0;font-weight:600;font-size:.92rem;color:var(--azul-claro);overflow:hidden}
+  .mov .mcon .msub{font-size:.74rem;color:var(--gris);font-weight:400}
+  .mov .mimp{font-weight:800;min-width:100px;text-align:right}
+  .mov.ing .mimp{color:var(--verde)}
+  .mov.gas .mimp{color:var(--rojo)}
+  .mov .msaldo{min-width:110px;text-align:right;font-size:.85rem}
+  .mov .msaldo b{color:var(--azul)}
+  .mov img.mini{width:40px;height:40px;object-fit:cover;border-radius:8px;border:1px solid var(--linea);cursor:pointer}
+  .caja-card{background:#fff;border:1px solid var(--linea);border-left:5px solid var(--naranja);border-radius:12px;box-shadow:var(--sombra);padding:12px 16px;min-width:200px;flex:1}
+  .caja-card .cnom{font-weight:700;color:var(--gris);font-size:.78rem;text-transform:uppercase}
+  .caja-card .csaldo{font-size:1.35rem;font-weight:800;color:var(--azul)}
+  .caja-card .csaldo.neg{color:var(--rojo)}
+</style>
+</head>
+<body>
+<div class="barra">
+  <div class="logo" style="cursor:pointer" onclick="location.href='index.html'">← <img src="/logo.png" alt="DINMEC" class="logo-img" onerror="this.outerHTML='<b>DINMEC</b>'"> <span>Finanzas</span></div>
+  <div class="crece"></div>
+  <button class="btn chico" style="background:rgba(255,255,255,.16);color:#fff;border:none" onclick="location.href='index.html'">🏠 INICIO</button>
+  <div class="usuario" id="usuario">…</div>
+</div>
+
+<div class="contenedor">
+  <div class="seccion-tit">
+    <h2>💰 Control de cajas y gastos</h2>
+    <div class="crece"></div>
+    <button class="btn fantasma chico" id="btnCaja" style="display:none" onclick="nuevaCaja()">+ Caja</button>
+    <button class="btn primario" onclick="nuevoMovimiento()">+ Movimiento</button>
+  </div>
+
+  <div id="cajas" style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0"></div>
+
+  <div class="filtros">
+    <input class="buscar" id="buscar" placeholder="🔎 Buscar concepto o usuario…" oninput="pintar()">
+    <select id="fCaja" onchange="cargarMovs()" style="border:1.5px solid var(--linea);border-radius:20px;padding:8px 14px;font-family:inherit"><option value="">Todas las cajas</option></select>
+    <div class="filtro activo" data-f="todos" onclick="filtrar(this)">Todos</div>
+    <div class="filtro" data-f="INGRESO" onclick="filtrar(this)">Ingresos</div>
+    <div class="filtro" data-f="GASTO" onclick="filtrar(this)">Gastos</div>
+  </div>
+
+  <div id="lista" style="background:#fff;border:1px solid var(--linea);border-radius:12px;box-shadow:var(--sombra);overflow:hidden;margin-top:12px"></div>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let USUARIO, CAJAS=[], MOVS=[], FILTRO="todos";
+
+async function inicio(){
+  USUARIO=await exigirSesion(); if(!USUARIO) return;
+  document.getElementById("usuario").textContent="👤 "+USUARIO.nombre;
+  if(!USUARIO.finanzas){
+    document.querySelector(".contenedor").innerHTML=`<div class="vacio" style="margin-top:30px">🔒 No tienes acceso a Finanzas.<br><br>Pide al administrador que te lo active en Administrar usuarios.<br><br><a class="btn primario" href="index.html">Volver al inicio</a></div>`;
+    return;
+  }
+  if(USUARIO.rol_app==="admin") document.getElementById("btnCaja").style.display="";
+  await cargarCajas();
+  await cargarMovs();
+}
+
+async function cargarCajas(){
+  CAJAS=await api.get("/api/fin/cajas");
+  if(CAJAS.error){ aviso("⚠️ "+CAJAS.error); CAJAS=[]; return; }
+  document.getElementById("cajas").innerHTML=CAJAS.map(c=>`
+    <div class="caja-card">
+      <div class="cnom">${escaparHTML(c.nombre)}</div>
+      <div class="csaldo ${c.saldo<0?"neg":""}">${dinero(c.saldo)}</div>
+    </div>`).join("")||`<div class="vacio" style="flex:1">Aún no hay cajas. ${USUARIO.rol_app==="admin"?"Crea la primera con el botón + Caja.":""}</div>`;
+  const sel=document.getElementById("fCaja");
+  const val=sel.value;
+  sel.innerHTML=`<option value="">Todas las cajas</option>`+CAJAS.map(c=>`<option value="${c.id}" ${c.id===val?"selected":""}>${escaparHTML(c.nombre)}</option>`).join("");
+}
+
+async function cargarMovs(){
+  const caja=document.getElementById("fCaja").value;
+  MOVS=await api.get("/api/fin/movimientos"+(caja?("?caja="+caja):""));
+  if(MOVS.error){ aviso("⚠️ "+MOVS.error); MOVS=[]; }
+  pintar();
+}
+
+function filtrar(el){
+  document.querySelectorAll(".filtro").forEach(f=>f.classList.remove("activo"));
+  el.classList.add("activo"); FILTRO=el.dataset.f; pintar();
+}
+function nombreCaja(id){ const c=CAJAS.find(x=>x.id===id); return c?c.nombre:"—"; }
+
+function pintar(){
+  const q=(document.getElementById("buscar").value||"").toLowerCase();
+  const fil=MOVS.filter(m=>(FILTRO==="todos"||m.tipo===FILTRO) && (!q||(m.concepto||"").toLowerCase().includes(q)||(m.usuario||"").toLowerCase().includes(q)));
+  document.getElementById("lista").innerHTML=fil.length?fil.map(m=>`
+    <div class="mov ${m.tipo==="INGRESO"?"ing":"gas"}">
+      <div class="mfecha">${new Date(m.fecha).toLocaleString("es-MX",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"})}</div>
+      <div class="mtipo">${m.tipo}</div>
+      <div class="mcon">${escaparHTML(m.concepto||"(sin concepto)")}
+        <div class="msub">${escaparHTML(nombreCaja(m.caja_id))} · ${escaparHTML(m.usuario||"")}</div>
+      </div>
+      ${m.archivo?`<img class="mini" src="/finimg/${m.archivo}" onclick="window.open('/finimg/${m.archivo}','_blank')" onerror="this.outerHTML='<a href=\\'/finimg/${m.archivo}\\' target=\\'_blank\\'>📎</a>'">`:""}
+      <div class="mimp">${m.tipo==="INGRESO"?"+":"−"}${dinero(m.importe)}</div>
+      <div class="msaldo">Saldo<br><b>${dinero(m.saldo)}</b></div>
+      ${USUARIO.rol_app==="admin"?`<button class="fr-borrar" title="Eliminar" onclick="borrarMov('${m.id}')">🗑</button>`:""}
+    </div>`).join(""):`<div class="vacio" style="border:none">Sin movimientos${q?" con esa búsqueda":""}.</div>`;
+}
+
+function nuevaCaja(){
+  const nombre=prompt("Nombre de la nueva caja (ej. DINMEC SOLUTIONS):");
+  if(nombre===null||!nombre.trim()) return;
+  api.post("/api/fin/cajas",{nombre:nombre.trim()}).then(r=>{
+    if(r.error){ aviso("⚠️ "+r.error); return; }
+    aviso("Caja creada ✓"); cargarCajas();
+  });
+}
+
+function nuevoMovimiento(){
+  if(!CAJAS.length){ aviso("⚠️ Primero crea una caja"); return; }
+  const fondo=document.createElement("div"); fondo.className="modal-fondo";
+  fondo.innerHTML=`<div class="modal"><h2>Nuevo movimiento</h2>
+    <div class="campos" style="grid-template-columns:1fr 1fr">
+      <div class="campo"><label>Tipo</label><select id="m-tipo"><option value="GASTO">GASTO</option><option value="INGRESO">INGRESO</option></select></div>
+      <div class="campo"><label>Caja</label><select id="m-caja">${CAJAS.map(c=>`<option value="${c.id}">${escaparHTML(c.nombre)}</option>`).join("")}</select></div>
+      <div class="campo" style="grid-column:1/-1"><label>Concepto</label><input id="m-concepto" placeholder="Ej. Vulcanizado de llanta"></div>
+      <div class="campo"><label>Importe</label><input id="m-importe" type="number" step="any" min="0"></div>
+      <div class="campo"><label>Comprobante (foto o PDF)</label><input id="m-foto" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" capture="environment"></div>
+    </div>
+    <div class="acciones"><button class="btn fantasma" id="m-cancel">Cancelar</button><button class="btn verde" id="m-ok">💾 Guardar</button></div>
+  </div>`;
+  document.body.appendChild(fondo);
+  fondo.querySelector("#m-cancel").onclick=()=>fondo.remove();
+  fondo.querySelector("#m-ok").onclick=async()=>{
+    const importe=parseFloat(fondo.querySelector("#m-importe").value);
+    if(!(importe>0)){ aviso("⚠️ Captura el importe"); return; }
+    const r=await api.post("/api/fin/movimientos",{
+      tipo:fondo.querySelector("#m-tipo").value,
+      caja_id:fondo.querySelector("#m-caja").value,
+      concepto:fondo.querySelector("#m-concepto").value.trim(),
+      importe});
+    if(r.error){ aviso("⚠️ "+r.error); return; }
+    const file=fondo.querySelector("#m-foto").files[0];
+    if(file){
+      aviso("Subiendo comprobante…");
+      const buf=await file.arrayBuffer();
+      const q=new URLSearchParams({nombre:file.name});
+      await fetch("/api/fin/movimiento/"+r.id+"/imagen?"+q,{method:"POST",headers:{"Content-Type":"application/octet-stream"},body:buf});
+    }
+    fondo.remove(); aviso("Movimiento guardado ✓");
+    cargarCajas(); cargarMovs();
+  };
+}
+
+async function borrarMov(id){
+  if(!confirm("¿Eliminar este movimiento? El saldo se recalculará.")) return;
+  const r=await api.del("/api/fin/movimiento/"+id);
+  if(r.error){ aviso("⚠️ "+r.error); return; }
+  aviso("Movimiento eliminado"); cargarCajas(); cargarMovs();
+}
+inicio();
+</script>
+</body>
+</html>

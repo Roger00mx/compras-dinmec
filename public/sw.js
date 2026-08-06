@@ -1,9 +1,9 @@
 // Service Worker — Compras SGC Digital
 // Hace que la app cargue rápido e instalada. NO guarda datos ni archivos (esos siempre van a la red).
-const CACHE = "cd-cache-v5";
+const CACHE = "cd-cache-v6";
 const SHELL = [
   "/", "/index.html", "/compra.html", "/proveedores.html", "/proveedor.html",
-  "/cxp.html", "/login.html", "/usuarios.html",
+  "/cxp.html", "/login.html", "/usuarios.html", "/finanzas.html",
   "/estilos.css", "/comun.js", "/logo.png", "/icono-192.png", "/icono-512.png", "/manifest.webmanifest"
 ];
 self.addEventListener("install", (e) => {

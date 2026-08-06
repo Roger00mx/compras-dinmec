@@ -50,9 +50,10 @@ async function cargar(){
     <div class="tarjeta" style="cursor:default">
       <div class="cli">${escaparHTML(u.nombre)} ${u.rol_app==="admin"?'<span class="chip" style="background:#fef3d6;color:#a06a00">admin</span>':""}</div>
       <div class="meta">Usuario: <b>${escaparHTML(u.usuario)}</b></div>
-      <div class="meta">${escaparHTML(u.rol||"")} ${/direc/i.test(u.rol||"")?'<span class="chip verde">autoriza</span>':""}</div>
+      <div class="meta">${escaparHTML(u.rol||"")} ${/direc|administraci\S*\s+y\s+finanzas/i.test(u.rol||"")?'<span class="chip verde">autoriza</span>':""} ${(u.finanzas||u.rol_app==="admin")?'<span class="chip" style="background:#fdeedd;color:#c96a08">💰 Finanzas</span>':""}</div>
       <div class="chips" style="margin-top:8px">
         <button class="btn fantasma chico" onclick="cambiarClave('${u.id}','${escaparHTML(u.nombre)}')">Cambiar contraseña</button>
+        ${u.rol_app!=="admin"?`<button class="btn fantasma chico" onclick="toggleFinanzas('${u.id}',${u.finanzas?0:1})">${u.finanzas?"Quitar":"Dar"} acceso 💰</button>`:""}
         ${u.usuario!==YO.usuario?`<button class="btn peligro chico" onclick="borrar('${u.id}','${escaparHTML(u.nombre)}')">Eliminar</button>`:""}
       </div>
     </div>`).join("");
@@ -66,13 +67,14 @@ function nuevoUsuario(){
     <div class="campo" style="margin-top:10px"><label>Rol / puesto (define permisos)</label><input id="u-rol" list="roles" placeholder="Empieza a escribir…"><datalist id="roles"></datalist></div>
     <div class="campo" style="margin-top:10px"><label>Contraseña</label><input id="u-clave" type="text" placeholder="mínimo 4 caracteres"></div>
     <label style="display:flex;gap:8px;align-items:center;margin-top:12px;cursor:pointer"><input type="checkbox" id="u-admin"> Es administrador (crea usuarios y también autoriza)</label>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:8px;cursor:pointer"><input type="checkbox" id="u-fin"> 💰 Acceso al módulo de Finanzas (cajas y gastos)</label>
     <div class="acciones"><button class="btn fantasma" id="u-cancel">Cancelar</button><button class="btn primario" id="u-ok">Crear</button></div>
   </div>`;
   document.body.appendChild(fondo);
   api.get("/api/catalogos").then(({roles})=>{ fondo.querySelector("#roles").innerHTML=roles.map(r=>`<option value="${r}">`).join(""); });
   fondo.querySelector("#u-cancel").onclick=()=>fondo.remove();
   fondo.querySelector("#u-ok").onclick=async()=>{
-    const body={nombre:gv("u-nombre"),usuario:gv("u-usuario"),rol:gv("u-rol"),clave:gv("u-clave"),rol_app:fondo.querySelector("#u-admin").checked?"admin":"usuario"};
+    const body={nombre:gv("u-nombre"),usuario:gv("u-usuario"),rol:gv("u-rol"),clave:gv("u-clave"),rol_app:fondo.querySelector("#u-admin").checked?"admin":"usuario",finanzas:fondo.querySelector("#u-fin").checked};
     if(!body.usuario||body.clave.length<4){ aviso("Usuario y contraseña (4+) requeridos"); return; }
     const r=await api.post("/api/usuarios",body);
     if(r.ok){ fondo.remove(); aviso("Usuario creado ✓"); cargar(); } else { aviso(r.error||"Error"); }
@@ -80,6 +82,10 @@ function nuevoUsuario(){
   function gv(id){return fondo.querySelector("#"+id).value.trim();}
 }
 
+async function toggleFinanzas(id,valor){
+  const r=await api.put("/api/usuarios/"+id,{finanzas:valor});
+  if(r.ok){ aviso(valor?"Acceso a Finanzas activado ✓":"Acceso a Finanzas retirado"); cargar(); } else aviso(r.error||"Error");
+}
 async function cambiarClave(id,nombre){
   const nueva=prompt("Nueva contraseña para "+nombre+" (mínimo 4 caracteres):");
   if(nueva===null) return;
