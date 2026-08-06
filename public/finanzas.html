@@ -136,11 +136,23 @@ function nuevoMovimiento(){
       <div class="campo"><label>Caja</label><select id="m-caja">${CAJAS.map(c=>`<option value="${c.id}">${escaparHTML(c.nombre)}</option>`).join("")}</select></div>
       <div class="campo" style="grid-column:1/-1"><label>Concepto</label><input id="m-concepto" placeholder="Ej. Vulcanizado de llanta"></div>
       <div class="campo"><label>Importe</label><input id="m-importe" type="number" step="any" min="0"></div>
-      <div class="campo"><label>Comprobante (foto o PDF)</label><input id="m-foto" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" capture="environment"></div>
+      <div class="campo" style="grid-column:1/-1"><label>Comprobante</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <label class="adj-add">📷 Tomar foto<input id="m-foto-cam" type="file" accept="image/*" capture="environment"></label>
+          <label class="adj-add">📎 Archivo o galería<input id="m-foto-arch" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf"></label>
+          <span id="m-foto-nombre" style="font-size:.8rem;color:var(--gris)">Sin comprobante</span>
+        </div>
+      </div>
     </div>
     <div class="acciones"><button class="btn fantasma" id="m-cancel">Cancelar</button><button class="btn verde" id="m-ok">💾 Guardar</button></div>
   </div>`;
   document.body.appendChild(fondo);
+  let archivoSel=null;
+  ["m-foto-cam","m-foto-arch"].forEach(idi=>{
+    fondo.querySelector("#"+idi).onchange=ev=>{
+      if(ev.target.files[0]){ archivoSel=ev.target.files[0]; fondo.querySelector("#m-foto-nombre").textContent="✓ "+archivoSel.name; }
+    };
+  });
   fondo.querySelector("#m-cancel").onclick=()=>fondo.remove();
   fondo.querySelector("#m-ok").onclick=async()=>{
     const importe=parseFloat(fondo.querySelector("#m-importe").value);
@@ -151,7 +163,7 @@ function nuevoMovimiento(){
       concepto:fondo.querySelector("#m-concepto").value.trim(),
       importe});
     if(r.error){ aviso("⚠️ "+r.error); return; }
-    const file=fondo.querySelector("#m-foto").files[0];
+    const file=archivoSel;
     if(file){
       aviso("Subiendo comprobante…");
       const buf=await file.arrayBuffer();
