@@ -111,9 +111,10 @@ function pintar(){
       <div class="mcon">${escaparHTML(m.concepto||"(sin concepto)")}
         <div class="msub">${escaparHTML(nombreCaja(m.caja_id))} · ${escaparHTML(m.usuario||"")}</div>
       </div>
-      ${m.archivo?`<img class="mini" src="/finimg/${m.archivo}" onclick="window.open('/finimg/${m.archivo}','_blank')" onerror="this.outerHTML='<a href=\\'/finimg/${m.archivo}\\' target=\\'_blank\\'>📎</a>'">`:""}
+      ${m.archivo?`<img class="mini" src="/finimg/${m.archivo}" onclick="verImg('/finimg/${m.archivo}')" onerror="this.outerHTML='<a href=\\'/finimg/${m.archivo}\\' target=\\'_blank\\'>📎</a>'">`:""}
       <div class="mimp">${m.tipo==="INGRESO"?"+":"−"}${dinero(m.importe)}</div>
       <div class="msaldo">Saldo<br><b>${dinero(m.saldo)}</b></div>
+      <button class="fr-borrar" style="background:var(--azul-bg);color:var(--azul)" title="Editar movimiento" onclick="editarMov('${m.id}')">✏️</button>
       ${USUARIO.rol_app==="admin"?`<button class="fr-borrar" title="Eliminar" onclick="borrarMov('${m.id}')">🗑</button>`:""}
     </div>`).join(""):`<div class="vacio" style="border:none">Sin movimientos${q?" con esa búsqueda":""}.</div>`;
 }
@@ -127,28 +128,40 @@ function nuevaCaja(){
   });
 }
 
-function nuevoMovimiento(){
+function verImg(src){
+  if(/\.pdf($|\?)/i.test(src)){ window.open(src,"_blank"); return; }
+  const f=document.createElement("div"); f.className="modal-fondo"; f.style.cursor="zoom-out";
+  f.innerHTML=`<img src="${src}" style="max-width:94vw;max-height:92vh;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.5)">`;
+  f.onclick=()=>f.remove();
+  document.body.appendChild(f);
+}
+function editarMov(id){
+  const m=MOVS.find(x=>x.id===id);
+  if(m) nuevoMovimiento(m);
+}
+function nuevoMovimiento(mEdit){
   if(!CAJAS.length){ aviso("⚠️ Primero crea una caja"); return; }
   const fondo=document.createElement("div"); fondo.className="modal-fondo";
-  fondo.innerHTML=`<div class="modal"><h2>Nuevo movimiento</h2>
+  fondo.innerHTML=`<div class="modal"><h2>${mEdit?"✏️ Editar movimiento":"Nuevo movimiento"}</h2>
     <div class="campos" style="grid-template-columns:1fr 1fr">
-      <div class="campo"><label>Tipo</label><select id="m-tipo"><option value="GASTO">GASTO</option><option value="INGRESO">INGRESO</option></select></div>
-      <div class="campo"><label>Caja</label><select id="m-caja">${CAJAS.map(c=>`<option value="${c.id}">${escaparHTML(c.nombre)}</option>`).join("")}</select></div>
-      <div class="campo" style="grid-column:1/-1"><label>Concepto</label><input id="m-concepto" placeholder="Ej. Vulcanizado de llanta"></div>
-      <div class="campo"><label>Importe</label><input id="m-importe" type="number" step="any" min="0"></div>
+      <div class="campo"><label>Tipo</label><select id="m-tipo"><option value="GASTO" ${mEdit&&mEdit.tipo==="GASTO"?"selected":""}>GASTO</option><option value="INGRESO" ${mEdit&&mEdit.tipo==="INGRESO"?"selected":""}>INGRESO</option></select></div>
+      <div class="campo"><label>Caja</label><select id="m-caja">${CAJAS.map(c=>`<option value="${c.id}" ${mEdit&&mEdit.caja_id===c.id?"selected":""}>${escaparHTML(c.nombre)}</option>`).join("")}</select></div>
+      <div class="campo" style="grid-column:1/-1"><label>Concepto</label><input id="m-concepto" placeholder="Ej. Vulcanizado de llanta" value="${mEdit?escaparHTML(mEdit.concepto||""):""}"></div>
+      <div class="campo"><label>Importe</label><input id="m-importe" type="number" step="any" min="0" value="${mEdit?mEdit.importe:""}"></div>
       <div class="campo"><label>Fecha del movimiento (editable)</label><input id="m-fecha" type="datetime-local"></div>
       <div class="campo" style="grid-column:1/-1"><label>Comprobante</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <label class="adj-add">📷 Tomar foto<input id="m-foto-cam" type="file" accept="image/*" capture="environment"></label>
           <label class="adj-add">📎 Archivo o galería<input id="m-foto-arch" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf"></label>
-          <span id="m-foto-nombre" style="font-size:.8rem;color:var(--gris)">Sin comprobante</span>
+          <span id="m-foto-nombre" style="font-size:.8rem;color:var(--gris)">${mEdit&&mEdit.archivo?"Ya tiene comprobante (elige otro solo si quieres reemplazarlo)":"Sin comprobante"}</span>
         </div>
       </div>
     </div>
-    <div class="acciones"><button class="btn fantasma" id="m-cancel">Cancelar</button><button class="btn verde" id="m-ok">💾 Guardar</button></div>
+    <div class="acciones"><button class="btn fantasma" id="m-cancel">Cancelar</button><button class="btn verde" id="m-ok">💾 ${mEdit?"Guardar cambios":"Guardar"}</button></div>
   </div>`;
   document.body.appendChild(fondo);
-  fondo.querySelector("#m-fecha").value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
+  const fBase=mEdit?new Date(mEdit.fecha):new Date();
+  fondo.querySelector("#m-fecha").value=new Date(fBase.getTime()-fBase.getTimezoneOffset()*60000).toISOString().slice(0,16);
   let archivoSel=null;
   ["m-foto-cam","m-foto-arch"].forEach(idi=>{
     fondo.querySelector("#"+idi).onchange=ev=>{
@@ -160,21 +173,22 @@ function nuevoMovimiento(){
     const importe=parseFloat(fondo.querySelector("#m-importe").value);
     if(!(importe>0)){ aviso("⚠️ Captura el importe"); return; }
     const fechaV=fondo.querySelector("#m-fecha").value;
-    const r=await api.post("/api/fin/movimientos",{
+    const cuerpoMov={
       tipo:fondo.querySelector("#m-tipo").value,
       caja_id:fondo.querySelector("#m-caja").value,
       concepto:fondo.querySelector("#m-concepto").value.trim(),
       importe,
-      fecha:fechaV?new Date(fechaV).toISOString():undefined});
+      fecha:fechaV?new Date(fechaV).toISOString():undefined};
+    const r=mEdit?await api.put("/api/fin/movimiento/"+mEdit.id, cuerpoMov):await api.post("/api/fin/movimientos", cuerpoMov);
     if(r.error){ aviso("⚠️ "+r.error); return; }
-    const file=archivoSel;
-    if(file){
+    const movId=mEdit?mEdit.id:r.id;
+    if(archivoSel){
       aviso("Subiendo comprobante…");
-      const buf=await file.arrayBuffer();
-      const q=new URLSearchParams({nombre:file.name});
-      await fetch("/api/fin/movimiento/"+r.id+"/imagen?"+q,{method:"POST",headers:{"Content-Type":"application/octet-stream"},body:buf});
+      const buf=await archivoSel.arrayBuffer();
+      const q=new URLSearchParams({nombre:archivoSel.name});
+      await fetch("/api/fin/movimiento/"+movId+"/imagen?"+q,{method:"POST",headers:{"Content-Type":"application/octet-stream"},body:buf});
     }
-    fondo.remove(); aviso("Movimiento guardado ✓");
+    fondo.remove(); aviso(mEdit?"Movimiento actualizado ✓":"Movimiento guardado ✓");
     cargarCajas(); cargarMovs();
   };
 }
