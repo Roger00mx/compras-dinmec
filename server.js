@@ -661,6 +661,15 @@ const servidor = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, archivo });
     }
     const mMovDel = ruta.match(/^\/api\/fin\/movimiento\/([^/]+)$/);
+    if (mMovDel && req.method === "PUT") {
+      const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
+      const m = db.prepare("SELECT * FROM movimientos WHERE id=?").get(mMovDel[1]);
+      if (!m) return json(res, 404, { error: "Movimiento no encontrado" });
+      db.prepare("UPDATE movimientos SET caja_id=?, tipo=?, concepto=?, importe=?, fecha=? WHERE id=?")
+        .run(b.caja_id || m.caja_id, b.tipo === "INGRESO" ? "INGRESO" : "GASTO", b.concepto !== undefined ? b.concepto : m.concepto,
+          parseFloat(b.importe) > 0 ? parseFloat(b.importe) : m.importe, b.fecha || m.fecha, mMovDel[1]);
+      return json(res, 200, { ok: true });
+    }
     if (mMovDel && req.method === "DELETE") {
       if (yo.rol_app !== "admin") return json(res, 403, { error: "Solo administrador puede eliminar movimientos" });
       const m = db.prepare("SELECT archivo FROM movimientos WHERE id=?").get(mMovDel[1]);
