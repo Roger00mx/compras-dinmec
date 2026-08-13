@@ -212,6 +212,7 @@ function resumenExpediente(sec) {
   const ords = oc.ordenes || (oc.partidas ? [oc] : []);
   if (ords.length && ords.every(o => o.estado === "enviada")) { pasos = 3; etiqueta = "OC enviada"; }
   else if (ords.some(o => o.estado === "autorizada" || o.estado === "enviada")) { pasos = 3; etiqueta = "OC autorizada"; }
+  else if (ords.length) { return { etiqueta: "OC pendiente de autorizar", color: "ambar", pct: 50 }; }
   const entregas = rec.entregas || [];
   const noConforme = entregas.some(e => e.resultado === "no conforme");
   if (rec.estado === "total") { pasos = 4; etiqueta = noConforme ? "Recibida (con NC)" : "Recibida total"; }
