@@ -34,6 +34,12 @@
 
   <div class="filtros">
     <input class="buscar" id="buscar" placeholder="🔎 Buscar folio, proyecto, cliente…" oninput="pintar()">
+    <select id="ordenar" onchange="pintar()" style="border:1.5px solid var(--linea);border-radius:20px;padding:8px 14px;font-size:.85rem;font-family:inherit;font-weight:600;color:var(--gris)">
+      <option value="rec">↓ Recientes primero</option>
+      <option value="ant">↑ Antiguas primero</option>
+      <option value="folioDesc">Folio: nuevas primero</option>
+      <option value="folioAsc">Folio: viejas primero</option>
+    </select>
     <div class="filtro activo" data-f="todas" onclick="filtrar(this)">Todas</div>
     <div class="filtro" data-f="pendientes" onclick="filtrar(this)">Por autorizar</div>
     <div class="filtro" data-f="proceso" onclick="filtrar(this)">En proceso</div>
@@ -86,7 +92,7 @@ function filtrar(el){
 
 function coincideFiltro(c){
   const e=c.resumen.etiqueta;
-  if(FILTRO==="pendientes") return e==="Pendiente de autorizar"||e==="En cotización"||e==="Selección aprobada"||e==="Requisición autorizada"||e==="OC autorizada";
+  if(FILTRO==="pendientes") return e==="Pendiente de autorizar"||e==="En cotización"||e==="Selección aprobada"||e==="Requisición autorizada"||e==="OC autorizada"||e==="OC pendiente de autorizar";
   if(FILTRO==="proceso") return !e.includes("Cerrada") && e!=="Rechazada";
   if(FILTRO==="cerradas") return e.includes("Cerrada");
   if(FILTRO==="rechazadas") return e==="Rechazada";
@@ -102,6 +108,11 @@ function pintar(){
     (c.tipo_compra||"").toLowerCase().includes(q) || (c.destino||"").toLowerCase().includes(q) ||
     (c.descripcion1||"").toLowerCase().includes(q)
   ));
+  const ordSel=document.getElementById("ordenar").value;
+  const claveFolio=c=>{const m=(c.folio||"").match(/^(\d{2})\.(\d{2})\.(\d{2})-(\d+)$/);return m?("20"+m[3]+m[2]+m[1]+"-"+m[4].padStart(3,"0")):("0000"+(c.folio||""));};
+  if(ordSel==="ant") filtradas.sort((a,b)=>(a.actualizado||"").localeCompare(b.actualizado||""));
+  else if(ordSel==="folioDesc") filtradas.sort((a,b)=>claveFolio(b).localeCompare(claveFolio(a)));
+  else if(ordSel==="folioAsc") filtradas.sort((a,b)=>claveFolio(a).localeCompare(claveFolio(b)));
   if(!filtradas.length){
     cont.className="";
     cont.innerHTML=`<div class="vacio">${LISTA.length?"No hay compras con este filtro.":"Aún no hay compras."}<br><br><button class="btn primario" onclick="nuevaCompra()">+ Crear la primera requisición</button></div>`;

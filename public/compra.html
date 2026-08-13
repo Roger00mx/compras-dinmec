@@ -633,9 +633,10 @@ function ordenHTML(o,i,total){
   return `<div class="entrega" data-orden="${i}">
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;align-items:center">
       <b>${folioOC(i,total)} · ${escaparHTML(p?p.razon_social:"(proveedor)")}</b>
-      <span class="chip ${o.estado==="enviada"?"verde":(o.estado==="autorizada"?"azul":"gris")}">${o.estado==="enviada"?"Enviada al proveedor":(o.estado==="autorizada"?"Autorizada":"Borrador")}</span>
+      <span class="chip ${o.estado==="enviada"?"verde":(o.estado==="autorizada"?"azul":"ambar")}">${o.estado==="enviada"?"Enviada al proveedor":(o.estado==="autorizada"?"Autorizada":"⏳ Pendiente de autorizar")}</span>
     </div>
     <div class="meta" style="font-size:.82rem;color:var(--gris)">${p?`${escaparHTML(p.contacto||"—")} · ${escaparHTML(p.telefono||"—")} · ${escaparHTML(p.email||"")}`:""}</div>
+    ${!o.estado?`<div class="sello ambar">⏳ Esta OC está PENDIENTE DE AUTORIZAR por Gerencia general / Dirección. Revisa precios, guarda y usa "✓ Autorizar esta OC".</div>`:""}
     ${o.estado?`<div class="sello">✅ Autorizada por ${escaparHTML(o.autorizada_por||"")} · ${fechaCorta(o.fecha_autorizacion)}${o.estado==="enviada"?` — 📨 enviada por ${escaparHTML(o.enviada_por||"")} el ${fechaCorta(o.fecha_envio)}`:""}</div>`:""}
     <div class="campos" style="margin-top:8px">
       <div class="campo"><label>No. cotización</label><input data-oc="${i}" data-k="cotizacion" value="${escaparHTML(o.cotizacion||"")}" ${e?"":"readonly"}></div>
@@ -806,7 +807,7 @@ function entregaHTML(en,i){
     ${nc?`<div class="sello rojo" style="margin-top:8px">Notas de no conformidad: ${escaparHTML(en.notas||"")} — notificar a proveedor y abrir acción correctiva (PS-GDC-01, etapa 6)</div>`:""}
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:.83rem">
       <div>📤 Entrega: <b>${escaparHTML(en.entrega_nombre||"—")}</b> ${en.firma_entrega?`<img src="${en.firma_entrega}" style="height:36px;vertical-align:middle;border:1px solid var(--linea);border-radius:6px;background:#fff">`:""}</div>
-      <div>📥 Recibe: <b>${escaparHTML(en.recibe_nombre||"—")}</b> ${en.firma_recibe?`<img src="${en.firma_recibe}" style="height:36px;vertical-align:middle;border:1px solid var(--linea);border-radius:6px;background:#fff">`:""}</div>
+      <div>📥 Recibe: <b>${escaparHTML(en.recibe_nombre||"—")}</b> ${en.firma_recibe?`<img src="${en.firma_recibe}" style="height:36px;vertical-align:middle;border:1px solid var(--linea);border-radius:6px;background:#fff">`:`<button class="btn chico verde" onclick="firmarRecibo(${i})">✍️ Firmar recibido</button>`}</div>
       <div class="f" style="color:var(--gris)">Capturó: ${escaparHTML(en.capturado_por||"")}</div>
     </div>
   </div>`;
@@ -838,9 +839,9 @@ function nuevaEntrega(){
     <div class="et" style="margin:12px 0 4px;font-size:.78rem;font-weight:700;color:var(--gris)">INFORMACIÓN DE ENTREGA (quien entrega)</div>
     <div class="campo"><label>Nombre</label><input id="e-entrega-nombre"></div>
     <div class="firma-caja" data-firma="ent__e" style="margin-top:6px"><canvas></canvas><div class="ph">Firma de quien entrega</div></div>
-    <div class="et" style="margin:12px 0 4px;font-size:.78rem;font-weight:700;color:var(--gris)">INFORMACIÓN DE RECIBIDO (almacén)</div>
-    <div class="campo"><label>Nombre</label><select id="e-recibe-nombre">${USERS.map(u=>`<option ${u.nombre===USUARIO.nombre?"selected":""}>${escaparHTML(u.nombre)}</option>`).join("")}</select></div>
-    <div class="firma-caja" data-firma="ent__r" style="margin-top:6px"><canvas></canvas><div class="ph">Firma de quien recibe</div></div>
+    <div class="et" style="margin:12px 0 4px;font-size:.78rem;font-weight:700;color:var(--gris)">INFORMACIÓN DE RECIBIDO (almacén) — opcional: puede firmar después desde su equipo</div>
+    <div class="campo"><label>Nombre</label><select id="e-recibe-nombre"><option value="">— Firmará después —</option>${USERS.map(u=>`<option ${u.nombre===USUARIO.nombre?"selected":""}>${escaparHTML(u.nombre)}</option>`).join("")}</select></div>
+    <div class="firma-caja" data-firma="ent__r" style="margin-top:6px"><canvas></canvas><div class="ph">Firma de quien recibe (o deja vacío para firmar después)</div></div>
     <div class="acciones"><button class="btn fantasma" id="e-cancel">Cancelar</button><button class="btn verde" id="e-ok">💾 Guardar entrega</button></div>
   </div>`;
   document.body.appendChild(fondo);
@@ -863,20 +864,38 @@ function nuevaEntrega(){
     if(!partidas.length){ aviso("⚠️ Captura el material recibido"); return; }
     if(resultado==="no conforme"&&!notas){ aviso("⚠️ Describe la no conformidad"); return; }
     const fe=firmasVivas["ent__e"], fr=firmasVivas["ent__r"];
-    if(fr.estaVacio()){ aviso("⚠️ Falta la firma de quien recibe (almacén)"); return; }
     const ordSel=ords[parseInt(fondo.querySelector("#e-orden").value)]||{};
     const entrega={fecha:fondo.querySelector("#e-fecha").value, factura:fondo.querySelector("#e-factura").value.trim(),
       proveedor_id:ordSel.proveedor_id||"", orden_id:ordSel.id||"",
       partidas, resultado, notas,
       entrega_nombre:fondo.querySelector("#e-entrega-nombre").value.trim(),
       recibe_nombre:fondo.querySelector("#e-recibe-nombre").value.trim(),
-      firma_entrega:fe.estaVacio()?"":fe.aDataURL(), firma_recibe:fr.aDataURL(),
+      firma_entrega:fe.estaVacio()?"":fe.aDataURL(), firma_recibe:fr.estaVacio()?"":fr.aDataURL(),
       capturado_por:USUARIO.nombre, capturado:new Date().toISOString(), version:CAT.versiones.recepcion};
     const d={...sec("recepcion").datos};
     d.entregas=[...(d.entregas||[]), entrega];
     if(!d.estado) d.estado="parcial";
     fondo.remove();
     await guardarSeccion("recepcion", d, [], resultado==="no conforme"?"Entrega registrada — NO CONFORME ⚠️":"Entrega registrada ✓");
+  };
+}
+function firmarRecibo(i){
+  const fondo=document.createElement("div"); fondo.className="modal-fondo";
+  fondo.innerHTML=`<div class="modal" style="width:420px"><h2>✍️ Firmar recibido — Entrega ${i+1}</h2>
+    <div class="campo"><label>Nombre de quien recibe</label><select id="fr-nombre">${USERS.map(u=>`<option ${u.nombre===USUARIO.nombre?"selected":""}>${escaparHTML(u.nombre)}</option>`).join("")}</select></div>
+    <div class="firma-caja" style="margin-top:8px"><canvas></canvas><div class="ph">Firma aquí con el dedo o mouse</div></div>
+    <div class="acciones"><button class="btn fantasma" id="fr-cancel">Cancelar</button><button class="btn verde" id="fr-ok">💾 Guardar firma</button></div>
+  </div>`;
+  document.body.appendChild(fondo);
+  const fv=crearFirma(fondo.querySelector(".firma-caja"));
+  fondo.querySelector("#fr-cancel").onclick=()=>fondo.remove();
+  fondo.querySelector("#fr-ok").onclick=async()=>{
+    if(fv.estaVacio()){ aviso("⚠️ Falta la firma"); return; }
+    const d={...sec("recepcion").datos};
+    d.entregas=(d.entregas||[]).map((en,x)=>x===i?{...en, recibe_nombre:fondo.querySelector("#fr-nombre").value,
+      firma_recibe:fv.aDataURL(), firma_recibe_fecha:new Date().toISOString(), firma_recibe_usuario:USUARIO.nombre}:en);
+    fondo.remove();
+    await guardarSeccion("recepcion", d, [], "Firma de recibido guardada ✓");
   };
 }
 async function cerrarRecepcion(){
@@ -896,8 +915,8 @@ function construirCxP(){
   cuerpo.innerHTML=`
     <div class="bloque"><div class="et">Facturas del expediente (${CAT.versiones.cxp}) — Proveedores: ${escaparHTML(nombresProv)}</div>
       <div class="ptabla-scroll"><table class="ptabla"><thead>
-        <tr><th>Proveedor</th><th>Factura</th><th>Fecha</th><th>Importe</th><th>Vencimiento</th><th>Días</th><th>Autorizada pago</th><th>Pagada</th><th></th></tr></thead>
-        <tbody>${facturas.length?facturas.map((f,i)=>filaFactura(f,i)).join(""):`<tr><td colspan="9" style="color:var(--gris);text-align:center;padding:14px">Sin facturas registradas</td></tr>`}</tbody>
+        <tr><th>Proveedor</th><th>Factura</th><th>Archivo (XML/PDF)</th><th>Fecha</th><th>Importe</th><th>Vencimiento</th><th>Días</th><th>Autorizada pago</th><th>Pagada</th><th></th></tr></thead>
+        <tbody>${facturas.length?facturas.map((f,i)=>filaFactura(f,i)).join(""):`<tr><td colspan="10" style="color:var(--gris);text-align:center;padding:14px">Sin facturas registradas — registra una por cada proveedor/OC</td></tr>`}</tbody>
       </table></div>
       <button class="btn primario chico" style="margin-top:10px" onclick="nuevaFactura()">+ Registrar factura</button>
     </div>
@@ -907,9 +926,12 @@ function construirCxP(){
 function filaFactura(f,i){
   const dias=f.vencimiento?Math.ceil((new Date(f.vencimiento+"T12:00:00")-new Date())/86400000):null;
   const cl=f.pagada?"":"venc-"+(dias===null?"":(dias<0?"rojo":(dias<=7?"ambar":"")));
+  const adjF=DATA.archivos.filter(a=>a.seccion==="fact:"+f.id);
   return `<tr>
     <td>${escaparHTML((provDe(f.proveedor_id)||{}).razon_social||"—")}</td>
     <td><b>${escaparHTML(f.folio||"")}</b></td>
+    <td>${adjF.map(a=>`<a href="${a.url}" target="_blank" title="${escaparHTML(a.nombre)}">📎</a>`).join(" ")}
+      ${f.pagada&&adjF.length?"":`<label class="adj-add" style="padding:3px 9px;font-size:.72rem" title="Adjuntar XML o PDF de esta factura">＋<input type="file" accept=".pdf,.xml,.jpg,.jpeg,.png" onchange="subirFactArchivo(event,'${f.id}')"></label>`}</td>
     <td>${fechaCorta(f.fecha)}</td>
     <td class="num">${dinero(f.importe,f.moneda)}</td>
     <td>${fechaCorta(f.vencimiento)}</td>
@@ -950,6 +972,17 @@ function nuevaFactura(){
     fondo.remove();
     await guardarSeccion("cxp", d, [], "Factura registrada ✓ (adjunta el XML/PDF)");
   };
+}
+async function subirFactArchivo(ev,fid){
+  const file=ev.target.files[0]; if(!file) return;
+  aviso("Subiendo factura…");
+  const buf=await file.arrayBuffer();
+  const q=new URLSearchParams({seccion:"fact:"+fid, nombre:file.name});
+  const r=await fetch("/api/compra/"+ID+"/archivo?"+q,{method:"POST",headers:{"Content-Type":"application/octet-stream"},body:buf}).then(x=>x.json());
+  if(r.error){ aviso("⚠️ "+r.error); return; }
+  DATA.archivos.push(r);
+  construirCxP(); document.getElementById("sec-cxp").classList.add("abierta");
+  aviso("Factura adjuntada ✓");
 }
 async function autorizarFactura(i){
   if(!confirm("¿Autorizar esta factura para pago?")) return;

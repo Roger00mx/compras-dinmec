@@ -67,6 +67,7 @@ function pintar(){
         <span class="chip ${p.estatus==="Restringido"?"rojo":(p.estatus==="Condicionado"?"ambar":"verde")}">${escaparHTML(p.estatus||"Aprobado")}</span>
         ${p.ultima_eval?`<span class="chip ${colorClasif(p.ultima_eval.clasificacion)}">Eval: ${escaparHTML(p.ultima_eval.clasificacion)} (${p.ultima_eval.total}/18)</span>`:`<span class="chip gris">Sin evaluar</span>`}
         <span class="chip gris">Crédito ${p.credito_dias||0} días</span>
+        <button class="fr-abrir" onclick="event.stopPropagation();location.href='proveedor.html?id=${p.id}'">✏️ Editar / Evaluar</button>
       </div>
     </div>`).join("");
 }
