@@ -84,6 +84,7 @@ async function inicio(){
 async function cargar(){
   DATA=await api.get("/api/compra/"+ID);
   if(DATA.error){ document.getElementById("titulo").textContent="Expediente no encontrado"; return; }
+  if((!PROVS||!PROVS.length)&&DATA.proveedores) PROVS=DATA.proveedores; // nombres de proveedor para recepción (usuarios restringidos)
   if(USUARIO.rol_app==="admin") document.getElementById("btnEliminar").style.display="";
   pintarCabecera(); pintarSecciones(); cargarBitacora();
 }
@@ -147,7 +148,7 @@ function subEtiqueta(s){
 }
 function pintarSecciones(){
   const abiertaAntes=document.querySelector(".tarea.abierta")?.id;
-  const visibles=USUARIO.veTodo?SECS:SECS.filter(s=>s.id==="requisicion");
+  const visibles=USUARIO.veTodo?SECS:SECS.filter(s=>s.id==="requisicion"||s.id==="recepcion");
   document.getElementById("secciones").innerHTML=visibles.map(s=>{
     const listo=estadoIcono(s)==="✅";
     return `<div class="tarea ${listo?"lista":""}" id="sec-${s.id}">
@@ -161,7 +162,7 @@ function pintarSecciones(){
       </div>
       <div class="tarea-cuerpo" id="cuerpo-${s.id}"></div>
     </div>`;
-  }).join("")+(USUARIO.veTodo?"":`<div class="candado" style="margin-top:12px">🔒 Las etapas de selección de proveedor, órdenes de compra, recepción y facturas son gestionadas por Compras y Dirección (información confidencial).</div>`);
+  }).join("")+(USUARIO.veTodo?"":`<div class="candado" style="margin-top:12px">🔒 Las etapas de selección de proveedor, órdenes de compra y facturas son gestionadas por Compras y Dirección (información confidencial). La recepción en almacén está disponible para registrar y firmar entregas.</div>`);
   if(abiertaAntes){ const el=document.getElementById(abiertaAntes); if(el){ el.classList.add("abierta"); construir(abiertaAntes.replace("sec-","")); } }
 }
 function alternar(id){
