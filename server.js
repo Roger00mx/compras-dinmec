@@ -7,6 +7,7 @@
 // =============================================================
 
 const http = require("node:http");
+const https = require("node:https");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -89,8 +90,50 @@ db.exec(`
     caja_id TEXT, tipo TEXT, concepto TEXT, importe REAL,
     archivo TEXT, fecha TEXT, usuario TEXT
   );
+  CREATE TABLE IF NOT EXISTS whatsapp_destinos (
+    id TEXT PRIMARY KEY,
+    nombre TEXT, telefono TEXT, apikey TEXT,
+    ev_requisicion INTEGER DEFAULT 1, ev_autorizar INTEGER DEFAULT 1, creado TEXT
+  );
+  CREATE TABLE IF NOT EXISTS config (
+    clave TEXT PRIMARY KEY, valor TEXT
+  );
 `);
 const puedeFinanzas = (u) => !!u && (u.rol_app === "admin" || u.finanzas === 1);
+
+// ---------- Avisos por WhatsApp ----------
+// Vía principal: webhook de n8n (que envía con la API oficial de Meta, ya configurada por DINMEC).
+// Respaldo opcional: CallMeBot por destino (si se captura su apikey).
+const URL_APP = process.env.RENDER_EXTERNAL_URL || "";
+const urlApp = (p) => (URL_APP ? URL_APP + p : "");
+const getConf = (k) => (db.prepare("SELECT valor FROM config WHERE clave=?").get(k) || {}).valor || "";
+const setConf = (k, v) => db.prepare("INSERT INTO config (clave,valor) VALUES (?,?) ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor").run(k, v);
+function enviarWhatsA(telefono, apikey, texto) {
+  const u = "https://api.callmebot.com/whatsapp.php?phone=" + encodeURIComponent(telefono) +
+    "&text=" + encodeURIComponent(texto) + "&apikey=" + encodeURIComponent(apikey);
+  try { https.get(u, (r) => { r.resume(); }).on("error", () => {}); } catch (_) {}
+}
+function postWebhook(urlStr, payload) {
+  try {
+    const u = new URL(urlStr);
+    const datos = JSON.stringify(payload);
+    const reqW = (u.protocol === "http:" ? http : https).request(u, { method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(datos) } }, (r) => { r.resume(); });
+    reqW.on("error", () => {}); reqW.write(datos); reqW.end();
+  } catch (_) {}
+}
+function notificarWhats(evento, texto) {
+  try {
+    const col = evento === "requisicion" ? "ev_requisicion" : "ev_autorizar";
+    const destinos = db.prepare("SELECT * FROM whatsapp_destinos WHERE " + col + "=1").all().filter((d) => d.telefono);
+    if (!destinos.length) return;
+    const webhook = getConf("webhook_n8n");
+    if (webhook) {
+      postWebhook(webhook, { origen: "compras-dinmec", evento, texto, telefonos: destinos.map((d) => d.telefono) });
+    } else {
+      for (const d of destinos) if (d.apikey) enviarWhatsA(d.telefono, d.apikey, texto);
+    }
+  } catch (_) {}
+}
 
 // ---------- Utilidades ----------
 const ahora = () => new Date().toISOString();
@@ -208,6 +251,7 @@ function resumenExpediente(sec) {
   else return { etiqueta: "Borrador", color: "gris", pct: 0 };
   let etiqueta = "Requisición autorizada";
   if (sel.estado === "aprobada") { pasos = 2; etiqueta = "Selección aprobada"; }
+  else if ((sel.cotizaciones || []).some((c) => c.seleccionado)) return { etiqueta: "Selección por aprobar (DG)", color: "ambar", pct: 30 };
   else if ((sel.cotizaciones || []).length) return { etiqueta: "En cotización", color: "ambar", pct: 25 };
   const ords = oc.ordenes || (oc.partidas ? [oc] : []);
   if (ords.length && ords.every(o => o.estado === "enviada")) { pasos = 3; etiqueta = "OC enviada"; }
@@ -347,6 +391,46 @@ const servidor = http.createServer(async (req, res) => {
       }
     }
 
+    // ---- Avisos por WhatsApp: configuración y destinos (solo admin) ----
+    if (ruta === "/api/whats-config") {
+      if (!yo || yo.rol_app !== "admin") return json(res, 403, { error: "Solo administrador" });
+      if (req.method === "GET") return json(res, 200, { webhook_n8n: getConf("webhook_n8n") });
+      if (req.method === "PUT") {
+        const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
+        setConf("webhook_n8n", (b.webhook_n8n || "").trim());
+        return json(res, 200, { ok: true });
+      }
+    }
+    if (ruta === "/api/whats") {
+      if (!yo || yo.rol_app !== "admin") return json(res, 403, { error: "Solo administrador" });
+      if (req.method === "GET") return json(res, 200, db.prepare("SELECT * FROM whatsapp_destinos ORDER BY creado").all());
+      if (req.method === "POST") {
+        const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
+        if (!b.telefono) return json(res, 400, { error: "Teléfono obligatorio, con código de país (ej. 5212221234567)" });
+        db.prepare("INSERT INTO whatsapp_destinos (id,nombre,telefono,apikey,ev_requisicion,ev_autorizar,creado) VALUES (?,?,?,?,?,?,?)")
+          .run(uid(), b.nombre || "", b.telefono.trim(), (b.apikey || "").trim(), b.ev_requisicion ? 1 : 0, b.ev_autorizar ? 1 : 0, ahora());
+        return json(res, 200, { ok: true });
+      }
+    }
+    const mWhats = ruta.match(/^\/api\/whats\/([^/]+)$/);
+    if (mWhats && req.method === "DELETE") {
+      if (!yo || yo.rol_app !== "admin") return json(res, 403, { error: "Solo administrador" });
+      db.prepare("DELETE FROM whatsapp_destinos WHERE id=?").run(mWhats[1]);
+      return json(res, 200, { ok: true });
+    }
+    const mWhatsPr = ruta.match(/^\/api\/whats\/([^/]+)\/prueba$/);
+    if (mWhatsPr && req.method === "POST") {
+      if (!yo || yo.rol_app !== "admin") return json(res, 403, { error: "Solo administrador" });
+      const d = db.prepare("SELECT * FROM whatsapp_destinos WHERE id=?").get(mWhatsPr[1]);
+      if (!d) return json(res, 404, { error: "Destino no encontrado" });
+      const webhook = getConf("webhook_n8n");
+      const txt = "✅ Prueba de avisos COMPRAS DINMEC: este número recibirá las notificaciones. " + urlApp("/");
+      if (webhook) postWebhook(webhook, { origen: "compras-dinmec", evento: "prueba", texto: txt, telefonos: [d.telefono] });
+      else if (d.apikey) enviarWhatsA(d.telefono, d.apikey, txt);
+      else return json(res, 400, { error: "Configura primero el webhook de n8n (o la apikey de CallMeBot del destino)" });
+      return json(res, 200, { ok: true });
+    }
+
     // ---- Respaldo (solo admin) ----
     if (ruta === "/api/respaldo" && req.method === "GET") {
       if (!yo || yo.rol_app !== "admin") return json(res, 403, { error: "Solo administrador" });
@@ -470,6 +554,30 @@ const servidor = http.createServer(async (req, res) => {
       db.prepare("UPDATE compras SET actualizado=?,actualizado_por=? WHERE id=?").run(ahora(), yo.nombre, mSec[1]);
       registrarBitacora(mSec[1], yo.nombre, "Guardar", describirCambio(seccion, previo, datos));
       avisarCambio(mSec[1], seccion);
+      // Avisos por WhatsApp
+      if (seccion === "requisicion" && (datos || {}).estado === "solicitada" && ((previo?.datos || {}).estado || "") !== "solicitada") {
+        const cW = db.prepare("SELECT folio FROM compras WHERE id=?").get(mSec[1]);
+        const p1 = (((datos || {}).partidas || [])[0] || {}).descripcion || "";
+        notificarWhats("requisicion", "📩 COMPRAS DINMEC\nNueva requisición REQ-" + (cW?.folio || "") + " de " + yo.nombre +
+          (p1 ? ("\nMaterial: " + p1) : "") + "\n⏳ PENDIENTE DE AUTORIZAR\n" + urlApp("/compra.html?id=" + mSec[1]));
+      }
+      if (seccion === "seleccion" && ((datos || {}).estado || "") !== "aprobada") {
+        const teniaSel = ((previo?.datos || {}).cotizaciones || []).some((c) => c.seleccionado);
+        const tieneSel = ((datos || {}).cotizaciones || []).some((c) => c.seleccionado);
+        if (tieneSel && !teniaSel) {
+          const cW = db.prepare("SELECT folio FROM compras WHERE id=?").get(mSec[1]);
+          notificarWhats("autorizar", "⏳ COMPRAS DINMEC\nSelección de proveedor POR APROBAR (Dirección general) en REQ-" + (cW?.folio || "") +
+            "\nCapturó: " + yo.nombre + "\n" + urlApp("/compra.html?id=" + mSec[1]));
+        }
+      }
+      if (seccion === "oc") {
+        const antesN = ((previo?.datos || {}).ordenes || []).length, ahoraN = ((datos || {}).ordenes || []).length;
+        if (ahoraN > antesN) {
+          const cW = db.prepare("SELECT folio FROM compras WHERE id=?").get(mSec[1]);
+          notificarWhats("autorizar", "⏳ COMPRAS DINMEC\n" + (ahoraN - antesN) + " orden(es) de compra PENDIENTES DE AUTORIZAR en REQ-" + (cW?.folio || "") +
+            "\nCapturó: " + yo.nombre + "\n" + urlApp("/compra.html?id=" + mSec[1]));
+        }
+      }
       const sec = seccionesDe(mSec[1]);
       return json(res, 200, { ok: true, resumen: resumenExpediente(sec) });
     }
