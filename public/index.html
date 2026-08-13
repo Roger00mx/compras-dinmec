@@ -92,7 +92,7 @@ function filtrar(el){
 
 function coincideFiltro(c){
   const e=c.resumen.etiqueta;
-  if(FILTRO==="pendientes") return e==="Pendiente de autorizar"||e==="En cotización"||e==="Selección aprobada"||e==="Requisición autorizada"||e==="OC autorizada"||e==="OC pendiente de autorizar";
+  if(FILTRO==="pendientes") return e==="Pendiente de autorizar"||e==="En cotización"||e==="Selección aprobada"||e==="Requisición autorizada"||e==="OC autorizada"||e==="OC pendiente de autorizar"||e==="Selección por aprobar (DG)";
   if(FILTRO==="proceso") return !e.includes("Cerrada") && e!=="Rechazada";
   if(FILTRO==="cerradas") return e.includes("Cerrada");
   if(FILTRO==="rechazadas") return e==="Rechazada";

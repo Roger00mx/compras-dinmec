@@ -30,6 +30,14 @@
     <p style="color:#5b6470;margin-top:0">Descarga una copia de seguridad de todos los datos (expedientes, proveedores, firmas y bitácora). Guárdala periódicamente.</p>
     <a class="btn primario chico" href="/api/respaldo">⬇️ Descargar respaldo ahora</a>
   </div>
+
+  <div class="seccion-tit" style="margin-top:34px"><h2>📱 Avisos por WhatsApp</h2><div class="crece"></div><button class="btn primario chico" onclick="nuevoDestino()">+ Número</button></div>
+  <div class="cabecera">
+    <p style="color:#5b6470;margin-top:0">La app avisa cuando se envía una <b>requisición a autorización</b> y cuando se generan <b>OC pendientes de autorizar</b>. El envío se hace a través de tu flujo de <b>n8n + WhatsApp (Meta)</b>: pega aquí la URL del webhook de n8n. La app le manda <code>{evento, texto, telefonos[]}</code> y n8n envía los mensajes.</p>
+    <div class="campo"><label>URL del webhook de n8n</label><input id="w-webhook" placeholder="https://tu-n8n.../webhook/compras-dinmec"></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn primario chico" onclick="guardarWebhook()">Guardar webhook</button></div>
+    <div id="w-lista" style="margin-top:14px"></div>
+  </div>
 </div>
 
 <script src="comun.js"></script>
@@ -41,6 +49,53 @@ async function inicio(){
   if(YO.rol_app!=="admin"){ document.querySelector(".contenedor").innerHTML="<div class='vacio'>Solo el administrador puede ver esta página.<br><br><a class='btn primario' href='index.html'>Volver</a></div>"; return; }
   document.getElementById("usuario").textContent="👤 "+YO.nombre;
   cargar();
+  cargarWhats();
+}
+
+async function cargarWhats(){
+  const conf=await api.get("/api/whats-config");
+  if(!conf.error) document.getElementById("w-webhook").value=conf.webhook_n8n||"";
+  const lista=await api.get("/api/whats");
+  if(lista.error) return;
+  document.getElementById("w-lista").innerHTML=(lista.length?lista.map(d=>`
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--linea);padding:8px 0">
+      <b>${escaparHTML(d.nombre||"(sin nombre)")}</b>
+      <span style="color:#5b6470">${escaparHTML(d.telefono)}</span>
+      ${d.ev_requisicion?'<span class="chip azul">Requisiciones</span>':""}
+      ${d.ev_autorizar?'<span class="chip">Por autorizar</span>':""}
+      <div class="crece"></div>
+      <button class="btn fantasma chico" onclick="probarDestino('${d.id}')">Enviar prueba</button>
+      <button class="btn peligro chico" onclick="borrarDestino('${d.id}')">Quitar</button>
+    </div>`).join(""):`<p style="color:#5b6470">Aún no hay números registrados. Agrega los de quienes deben recibir avisos.</p>`);
+}
+async function guardarWebhook(){
+  const r=await api.put("/api/whats-config",{webhook_n8n:document.getElementById("w-webhook").value.trim()});
+  if(r.ok) aviso("Webhook guardado ✓"); else aviso(r.error||"Error");
+}
+function nuevoDestino(){
+  const fondo=document.createElement("div"); fondo.className="modal-fondo";
+  fondo.innerHTML=`<div class="modal"><h2>Nuevo número de aviso</h2>
+    <div class="campo"><label>Nombre</label><input id="w-nombre" placeholder="Ej. Rogelio"></div>
+    <div class="campo" style="margin-top:10px"><label>WhatsApp con código de país</label><input id="w-tel" placeholder="Ej. 5212221291318"></div>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:12px;cursor:pointer"><input type="checkbox" id="w-ev1" checked> Avisar nuevas requisiciones</label>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:6px;cursor:pointer"><input type="checkbox" id="w-ev2" checked> Avisar OC pendientes de autorizar</label>
+    <div class="campo" style="margin-top:10px"><label>Apikey CallMeBot (opcional, solo si NO usas n8n)</label><input id="w-key"></div>
+    <div class="acciones"><button class="btn fantasma" id="w-cancel">Cancelar</button><button class="btn primario" id="w-ok">Agregar</button></div>
+  </div>`;
+  document.body.appendChild(fondo);
+  fondo.querySelector("#w-cancel").onclick=()=>fondo.remove();
+  fondo.querySelector("#w-ok").onclick=async()=>{
+    const r=await api.post("/api/whats",{nombre:fondo.querySelector("#w-nombre").value.trim(),telefono:fondo.querySelector("#w-tel").value.trim(),apikey:fondo.querySelector("#w-key").value.trim(),ev_requisicion:fondo.querySelector("#w-ev1").checked,ev_autorizar:fondo.querySelector("#w-ev2").checked});
+    if(r.ok){ fondo.remove(); aviso("Número agregado ✓"); cargarWhats(); } else aviso(r.error||"Error");
+  };
+}
+async function probarDestino(id){
+  const r=await api.post("/api/whats/"+id+"/prueba",{});
+  if(r.ok) aviso("Prueba enviada — revisa ese WhatsApp"); else aviso(r.error||"Error");
+}
+async function borrarDestino(id){
+  if(!confirm("¿Quitar este número de los avisos?")) return;
+  await api.del("/api/whats/"+id); cargarWhats();
 }
 
 async function cargar(){

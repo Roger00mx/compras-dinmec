@@ -382,8 +382,10 @@ function construirSeleccion(){
   const fEla=firmaParaPintar("seleccion","seleccion__ela", fs[0]||{rol:"Elaborado por (Responsable de compras)"});
   const fApr=firmaParaPintar("seleccion","seleccion__apr", fs[1]||{rol:"Aprobado por (Director general)"});
 
+  const haySeleccion=(d.cotizaciones||[]).some(c=>c.seleccionado||(c.productos||[]).some(pr=>pr.seleccionado));
   cuerpo.innerHTML=`
     ${bloqueado?`<div class="sello">✅ Selección aprobada electrónicamente por ${escaparHTML(d.aprobada_por||"")} el ${fechaCorta(d.fecha_aprobacion)} · ${CAT.versiones.seleccion}</div>`:""}
+    ${!bloqueado&&haySeleccion?`<div class="sello ambar">⏳ Ya hay proveedor(es) seleccionado(s) — PENDIENTE DE APROBACIÓN por Dirección general${USUARIO.autoriza?": revisa y usa \"✓ Aprobar selección\"":""}</div>`:""}
     <div class="bloque"><div class="et">Cotizaciones comparadas (mínimo 3, o justifica abajo) — puedes seleccionar VARIOS proveedores, uno por producto; se generará una OC por cada proveedor</div>
       <div id="s-cotizaciones">${cots.map((c,i)=>cotizacionHTML(c,i,!bloqueado)).join("")}</div>
       ${bloqueado?"":`<div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
