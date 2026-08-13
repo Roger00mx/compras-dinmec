@@ -491,10 +491,21 @@ const servidor = http.createServer(async (req, res) => {
     if (mCompra && req.method === "GET") {
       const full = obtenerCompra(mCompra[1]);
       if (!full) return json(res, 404, { error: "Expediente no encontrado" });
-      // Confidencialidad: quien no ve todo, solo recibe la requisición
+      // Confidencialidad: quien no ve todo, recibe requisición + recepción (con OC sanitizada SIN precios)
       if (!F.puedeVerTodo(yo)) {
-        full.secciones = { requisicion: full.secciones.requisicion || { datos: {}, firmas: [] } };
-        full.archivos = full.archivos.filter((a) => a.seccion === "requisicion");
+        const ocFull = (full.secciones.oc || {}).datos || {};
+        const ordsSan = (ocFull.ordenes || (ocFull.partidas ? [ocFull] : [])).map((o) => ({
+          id: o.id, proveedor_id: o.proveedor_id, estado: o.estado,
+          partidas: (o.partidas || []).map((p) => ({ cantidad: p.cantidad, unidad: p.unidad, descripcion: p.descripcion })),
+        }));
+        const idsProv = [...new Set(ordsSan.map((o) => o.proveedor_id).filter(Boolean))];
+        full.proveedores = idsProv.map((pid) => db.prepare("SELECT id, razon_social FROM proveedores WHERE id=?").get(pid) || { id: pid, razon_social: "" });
+        full.secciones = {
+          requisicion: full.secciones.requisicion || { datos: {}, firmas: [] },
+          recepcion: full.secciones.recepcion || { datos: {}, firmas: [] },
+          oc: { datos: { ordenes: ordsSan }, firmas: [] },
+        };
+        full.archivos = full.archivos.filter((a) => a.seccion === "requisicion" || a.seccion === "recepcion");
       }
       return json(res, 200, full);
     }
@@ -539,7 +550,7 @@ const servidor = http.createServer(async (req, res) => {
       const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
       const { seccion, datos, firmas } = b;
       if (!["requisicion", "seleccion", "oc", "recepcion", "cxp"].includes(seccion)) return json(res, 400, { error: "Sección inválida" });
-      if (seccion !== "requisicion" && !F.puedeVerTodo(yo)) return json(res, 403, { error: "No tienes acceso a esta etapa del proceso (información confidencial)" });
+      if (!["requisicion", "recepcion"].includes(seccion) && !F.puedeVerTodo(yo)) return json(res, 403, { error: "No tienes acceso a esta etapa del proceso (información confidencial)" });
       const previo = seccionesDe(mSec[1])[seccion];
       const errPerm = validarPermisos(yo, seccion, previo, datos);
       if (errPerm) return json(res, 403, { error: errPerm });
@@ -587,7 +598,7 @@ const servidor = http.createServer(async (req, res) => {
     if (mArch && req.method === "POST") {
       const buf = await leerCuerpo(req);
       const seccion = url.searchParams.get("seccion") || "";
-      if (seccion !== "requisicion" && !F.puedeVerTodo(yo)) return json(res, 403, { error: "No tienes acceso a esta etapa del proceso" });
+      if (!["requisicion", "recepcion"].includes(seccion) && !F.puedeVerTodo(yo)) return json(res, 403, { error: "No tienes acceso a esta etapa del proceso" });
       const nombre = url.searchParams.get("nombre") || "archivo.pdf";
       const ext = (path.extname(nombre) || ".pdf").toLowerCase();
       const permitidas = [".pdf", ".xml", ".jpg", ".jpeg", ".png", ".webp", ".xlsx", ".docx"];
@@ -616,7 +627,7 @@ const servidor = http.createServer(async (req, res) => {
     if (mArchGet && req.method === "GET") {
       const base = path.basename(mArchGet[1]);
       const fila = db.prepare("SELECT nombre_original, seccion FROM archivos WHERE archivo=?").get(base);
-      if (fila && fila.seccion !== "requisicion" && !F.puedeVerTodo(yo)) return json(res, 403, { error: "Acceso restringido" });
+      if (fila && !["requisicion", "recepcion"].includes(fila.seccion) && !F.puedeVerTodo(yo)) return json(res, 403, { error: "Acceso restringido" });
       return servirArchivo(res, path.join(DIR_ARCHIVOS, base), url.searchParams.get("dl") ? (fila?.nombre_original || base) : null);
     }
 
@@ -715,7 +726,7 @@ const servidor = http.createServer(async (req, res) => {
     if (mBit && req.method === "GET") {
       let filas = db.prepare("SELECT * FROM bitacora WHERE compra_id=? ORDER BY fecha DESC").all(mBit[1]);
       // Confidencialidad: los roles restringidos solo ven movimientos de la requisición
-      if (!F.puedeVerTodo(yo)) filas = filas.filter((b) => /requisicion|Expediente|folio/i.test(b.detalle || "") || b.accion === "Crear");
+      if (!F.puedeVerTodo(yo)) filas = filas.filter((b) => /requisicion|recepcion|Expediente|folio/i.test(b.detalle || "") || b.accion === "Crear");
       return json(res, 200, filas);
     }
 
