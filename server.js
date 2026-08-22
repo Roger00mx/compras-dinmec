@@ -121,16 +121,34 @@ function postWebhook(urlStr, payload) {
     reqW.on("error", () => {}); reqW.write(datos); reqW.end();
   } catch (_) {}
 }
+function postWebhookEspera(urlStr, payload) {
+  return new Promise((resolve) => {
+    try {
+      const u = new URL(urlStr);
+      const datos = JSON.stringify(payload);
+      const reqW = (u.protocol === "http:" ? http : https).request(u, { method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(datos) }, timeout: 10000 }, (r) => {
+        let cuerpo = "";
+        r.on("data", (c) => { if (cuerpo.length < 600) cuerpo += c; });
+        r.on("end", () => resolve({ ok: r.statusCode >= 200 && r.statusCode < 300, status: r.statusCode, cuerpo: String(cuerpo).slice(0, 300) }));
+      });
+      reqW.on("timeout", () => { reqW.destroy(); resolve({ ok: false, status: 0, cuerpo: "sin respuesta (timeout)" }); });
+      reqW.on("error", (e) => resolve({ ok: false, status: 0, cuerpo: e.message }));
+      reqW.write(datos); reqW.end();
+    } catch (e) { resolve({ ok: false, status: 0, cuerpo: e.message }); }
+  });
+}
 function notificarWhats(evento, texto) {
   try {
+    // Meta rechaza variables de plantilla con saltos de línea: aplanar el texto a una sola línea
+    const textoPlano = String(texto).replace(/\s*\n+\s*/g, " · ").replace(/\s{2,}/g, " ").trim();
     const col = evento === "requisicion" ? "ev_requisicion" : "ev_autorizar";
     const destinos = db.prepare("SELECT * FROM whatsapp_destinos WHERE " + col + "=1").all().filter((d) => d.telefono);
     if (!destinos.length) return;
     const webhook = getConf("webhook_n8n");
     if (webhook) {
-      postWebhook(webhook, { origen: "compras-dinmec", evento, texto, telefonos: destinos.map((d) => d.telefono) });
+      postWebhook(webhook, { origen: "compras-dinmec", evento, texto: textoPlano, telefonos: destinos.map((d) => d.telefono) });
     } else {
-      for (const d of destinos) if (d.apikey) enviarWhatsA(d.telefono, d.apikey, texto);
+      for (const d of destinos) if (d.apikey) enviarWhatsA(d.telefono, d.apikey, textoPlano);
     }
   } catch (_) {}
 }
@@ -425,10 +443,13 @@ const servidor = http.createServer(async (req, res) => {
       if (!d) return json(res, 404, { error: "Destino no encontrado" });
       const webhook = getConf("webhook_n8n");
       const txt = "✅ Prueba de avisos COMPRAS DINMEC: este número recibirá las notificaciones. " + urlApp("/");
-      if (webhook) postWebhook(webhook, { origen: "compras-dinmec", evento: "prueba", texto: txt, telefonos: [d.telefono] });
-      else if (d.apikey) enviarWhatsA(d.telefono, d.apikey, txt);
-      else return json(res, 400, { error: "Configura primero el webhook de n8n (o la apikey de CallMeBot del destino)" });
-      return json(res, 200, { ok: true });
+      if (webhook) {
+        const rw = await postWebhookEspera(webhook, { origen: "compras-dinmec", evento: "prueba", texto: txt, telefonos: [d.telefono] });
+        if (!rw.ok) return json(res, 502, { error: "n8n NO aceptó el aviso (HTTP " + (rw.status || "sin conexión") + "): " + rw.cuerpo });
+        return json(res, 200, { ok: true, detalle: "n8n recibió el aviso (HTTP " + rw.status + "). Si no llega el WhatsApp, revisa el nodo de WhatsApp en n8n (Executions)." });
+      }
+      if (d.apikey) { enviarWhatsA(d.telefono, d.apikey, txt); return json(res, 200, { ok: true, detalle: "Enviado vía CallMeBot" }); }
+      return json(res, 400, { error: "Configura primero el webhook de n8n (o la apikey de CallMeBot del destino)" });
     }
 
     // ---- Respaldo (solo admin) ----
