@@ -69,7 +69,9 @@ async function cargarWhats(){
     </div>`).join(""):`<p style="color:#5b6470">Aún no hay números registrados. Agrega los de quienes deben recibir avisos.</p>`);
 }
 async function guardarWebhook(){
-  const r=await api.put("/api/whats-config",{webhook_n8n:document.getElementById("w-webhook").value.trim()});
+  const v=document.getElementById("w-webhook").value.trim();
+  if(v && !/^https?:\/\//i.test(v)){ aviso("⚠️ Eso no es una URL. Pega la dirección del webhook de n8n (empieza con https://)"); return; }
+  const r=await api.put("/api/whats-config",{webhook_n8n:v});
   if(r.ok) aviso("Webhook guardado ✓"); else aviso(r.error||"Error");
 }
 function nuevoDestino(){
@@ -90,8 +92,9 @@ function nuevoDestino(){
   };
 }
 async function probarDestino(id){
+  aviso("Enviando prueba…");
   const r=await api.post("/api/whats/"+id+"/prueba",{});
-  if(r.ok) aviso("Prueba enviada — revisa ese WhatsApp"); else aviso(r.error||"Error");
+  if(r.ok) aviso("✓ "+(r.detalle||"Prueba enviada — revisa ese WhatsApp")); else aviso("⚠️ "+(r.error||"Error"));
 }
 async function borrarDestino(id){
   if(!confirm("¿Quitar este número de los avisos?")) return;
