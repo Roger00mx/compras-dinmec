@@ -682,12 +682,17 @@ const servidor = http.createServer(async (req, res) => {
       if (!p) return json(res, 404, { error: "Proveedor no encontrado" });
       const evaluaciones = db.prepare("SELECT * FROM evaluaciones WHERE proveedor_id=? ORDER BY creado DESC").all(mProv[1])
         .map(e => ({ id: e.id, creado: e.creado, creado_por: e.creado_por, datos: JSON.parse(e.datos || "{}"), firmas: JSON.parse(e.firmas || "[]") }));
-      // historial de compras con este proveedor
+      // historial de compras con este proveedor (soporta OC única antigua y múltiples OC por proveedor)
       const historial = [];
       for (const c of db.prepare("SELECT * FROM compras ORDER BY creado DESC").all()) {
         const sec = seccionesDe(c.id);
         const ocp = sec.oc?.datos || {};
-        if (ocp.proveedor_id === mProv[1]) historial.push({ id: c.id, folio: c.folio, proyecto: c.proyecto, total: ocp.total || 0, moneda: ocp.moneda || "MXN", resumen: resumenExpediente(sec) });
+        const ords = ocp.ordenes || (ocp.partidas ? [ocp] : []);
+        const mias = ords.filter((o) => o.proveedor_id === mProv[1]);
+        if (mias.length) {
+          const total = mias.reduce((s, o) => s + (parseFloat(o.total) || 0), 0);
+          historial.push({ id: c.id, folio: c.folio, proyecto: c.proyecto, total: total.toFixed(2), moneda: mias[0].moneda || "MXN", resumen: resumenExpediente(sec) });
+        }
       }
       return json(res, 200, { proveedor: p, evaluaciones, historial });
     }
