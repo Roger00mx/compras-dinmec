@@ -17,8 +17,9 @@
 </div>
 
 <div class="contenedor">
+  <div id="subnav" class="subnav"></div>
   <div class="seccion-tit">
-    <h2>Proveedores <span class="chip gris" id="chipFo"></span></h2>
+    <h2>Fichas de proveedores <span class="chip gris" id="chipFo"></span></h2>
     <div class="crece"></div>
     <button class="btn primario" onclick="nuevoProveedor()">+ Nuevo proveedor</button>
   </div>
@@ -34,6 +35,7 @@ let USUARIO, CAT, LISTA=[];
 async function inicio(){
   USUARIO=await exigirSesion(); if(!USUARIO) return;
   document.getElementById("usuario").textContent="👤 "+USUARIO.nombre;
+  navProveedores("fichas");
   CAT=await api.get("/api/catalogos");
   document.getElementById("chipFo").textContent=CAT.versiones.catalogo;
   await cargar();
@@ -65,8 +67,8 @@ function pintar(){
       <div class="meta">Contacto: ${escaparHTML(p.contacto||"—")} · ${escaparHTML(p.telefono||"")}</div>
       <div class="chips">
         <span class="chip ${p.estatus==="Restringido"?"rojo":(p.estatus==="Condicionado"?"ambar":"verde")}">${escaparHTML(p.estatus||"Aprobado")}</span>
-        ${p.ultima_eval?`<span class="chip ${colorClasif(p.ultima_eval.clasificacion)}">Eval: ${escaparHTML(p.ultima_eval.clasificacion)} (${p.ultima_eval.total}/18)</span>`:`<span class="chip gris">Sin evaluar</span>`}
-        <span class="chip gris">Crédito ${p.credito_dias||0} días</span>
+        ${p.ultima_eval?`<span class="chip ${colorClasif(p.ultima_eval.clasificacion)}">Eval: ${escaparHTML(p.ultima_eval.clasificacion)} (${p.ultima_eval.total}/18)</span>`:`<span class="chip chip-alerta" onclick="event.stopPropagation();location.href='proveedor.html?id=${p.id}&evaluar=1'">⚠️ EVALUAR LO ANTES POSIBLE</span>`}
+        <span class="chip ${tipoPago(p).color}">${escaparHTML(tipoPago(p).et)}</span>
         <button class="fr-abrir" onclick="event.stopPropagation();location.href='proveedor.html?id=${p.id}'">✏️ Editar / Evaluar</button>
       </div>
     </div>`).join("");

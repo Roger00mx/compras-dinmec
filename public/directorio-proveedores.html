@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Directorio de proveedores — Compras SGC</title>
+<meta name="theme-color" content="#1d3050">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+<style>@media print{ @page{size:letter landscape;margin:10mm} }</style>
+</head>
+<body>
+<div class="barra">
+  <div class="logo" style="cursor:pointer" onclick="location.href='index.html'">← <img src="/logo.png" alt="DINMEC GROUP" class="logo-img" onerror="this.outerHTML='<b>DINMEC</b>'"> <span>Proveedores</span></div>
+  <div class="crece"></div>
+  <div class="usuario" id="usuario">…</div>
+</div>
+
+<div class="contenedor">
+  <div id="subnav" class="subnav"></div>
+  <div class="solo-impresion" id="encImp"></div>
+
+  <div class="filtros">
+    <input class="buscar" id="buscar" placeholder="🔎 Proveedor, contacto, insumo, correo, teléfono…" oninput="pintar()">
+    <select id="fTipo" onchange="pintar()" style="border:1.5px solid var(--linea);border-radius:20px;padding:8px 14px;font-size:.85rem;font-family:inherit;font-weight:600;color:var(--gris)"></select>
+    <div class="filtro activo" data-pg="todos" onclick="filtrar(this)">Todos</div>
+    <div class="filtro" data-pg="credito" onclick="filtrar(this)">Con crédito</div>
+    <div class="filtro" data-pg="contado" onclick="filtrar(this)">Contado / anticipo</div>
+    <button class="btn fantasma chico no-imprimir" onclick="window.print()">🖨 Imprimir FO-GDC-05</button>
+    <button class="btn primario chico no-imprimir" onclick="location.href='proveedores.html?nuevo=1&volver=directorio-proveedores.html'">+ Nuevo</button>
+  </div>
+  <div id="cuenta" class="no-imprimir" style="font-size:.8rem;color:var(--gris);margin-top:6px"></div>
+
+  <div class="tabla-caja">
+    <table class="tabla-prov responsiva">
+      <thead><tr>
+        <th>Proveedor</th><th>Suministra</th><th>Contacto</th><th>Teléfono</th><th>Correo</th><th>Pago</th><th>Calificación</th>
+      </tr></thead>
+      <tbody id="cuerpo"></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let USUARIO, LISTA=[], PG="todos";
+async function inicio(){
+  USUARIO=await exigirSesion(); if(!USUARIO) return;
+  document.getElementById("usuario").textContent="👤 "+USUARIO.nombre;
+  navProveedores("directorio");
+  document.getElementById("encImp").innerHTML=encabezadoDinmec("CATÁLOGO DE PROVEEDORES","FO-GDC-05 Ver. 00");
+  LISTA=await api.get("/api/proveedores");
+  if(LISTA.error){ document.querySelector(".contenedor").innerHTML=`<div class="vacio">🔒 ${escaparHTML(LISTA.error)}</div>`; return; }
+  LISTA=LISTA.filter(p=>p.estatus!=="Inactivo");
+  const tipos=[...new Set(LISTA.map(p=>(p.suministra||"").trim()).filter(Boolean))].sort();
+  document.getElementById("fTipo").innerHTML=`<option value="">Todo lo que suministran</option>`+tipos.map(t=>`<option>${escaparHTML(t)}</option>`).join("");
+  if(paramURL("q")) document.getElementById("buscar").value=paramURL("q");
+  pintar();
+}
+function filtrar(el){ document.querySelectorAll("[data-pg]").forEach(f=>f.classList.remove("activo")); el.classList.add("activo"); PG=el.dataset.pg; pintar(); }
+
+function pintar(){
+  const q=(document.getElementById("buscar").value||"").toLowerCase(), tipo=document.getElementById("fTipo").value;
+  const fil=LISTA.filter(p=>{
+    const pg=tipoPago(p).id;
+    if(PG==="credito"&&pg!=="credito") return false;
+    if(PG==="contado"&&!(pg==="contado"||pg==="anticipo")) return false;
+    if(tipo&&(p.suministra||"").trim()!==tipo) return false;
+    if(!q) return true;
+    return [p.razon_social,p.contacto,p.suministra,p.email,p.telefono,p.rfc].some(x=>(x||"").toLowerCase().includes(q));
+  });
+  document.getElementById("cuenta").textContent=fil.length+" de "+LISTA.length+" proveedores";
+  const cuerpo=document.getElementById("cuerpo");
+  if(!fil.length){ cuerpo.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--gris)">Sin coincidencias.</td></tr>`; return; }
+  cuerpo.innerHTML=fil.map(p=>{
+    const pg=tipoPago(p), u=p.ultima_eval, tel=telLimpio(p.telefono), wa=waLink(p.telefono);
+    return `<tr>
+      <td data-et="Proveedor"><div><a class="nom" href="proveedor.html?id=${p.id}">${escaparHTML(p.razon_social)}</a>${p.rfc?`<div class="sub">RFC ${escaparHTML(p.rfc)}</div>`:""}</div></td>
+      <td data-et="Suministra">${escaparHTML(p.suministra||"—")}</td>
+      <td data-et="Contacto"><b>${escaparHTML(p.contacto||"—")}</b></td>
+      <td data-et="Teléfono">${tel?`<div class="acc"><a class="btn-contacto" href="tel:${tel}">📞 ${escaparHTML(p.telefono)}</a>${wa?`<a class="btn-contacto wa" href="${wa}" target="_blank" rel="noopener">WhatsApp</a>`:""}</div>`:"—"}</td>
+      <td data-et="Correo">${p.email?`<a class="btn-contacto mail" href="mailto:${escaparHTML(p.email)}">✉️ ${escaparHTML(p.email)}</a>`:"—"}</td>
+      <td data-et="Pago"><span class="chip ${pg.color}">${escaparHTML(pg.et)}</span><div class="sub">${escaparHTML(p.forma_pago||"")}</div></td>
+      <td data-et="Calificación">${u?`<a href="evaluacion.html?id=${u.id}" class="chip ${colorClasifEval(u.clasificacion)}">${escaparHTML(u.clasificacion)} ${u.total}/18</a>`:`<a href="proveedor.html?id=${p.id}&evaluar=1" class="chip chip-alerta">⚠️ EVALUAR</a>`}</td>
+    </tr>`;
+  }).join("");
+}
+inicio();
+</script>
+</body>
+</html>

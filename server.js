@@ -653,17 +653,59 @@ const servidor = http.createServer(async (req, res) => {
     }
 
     // ---- Proveedores (FO-GDC-05) — solo quienes ven todo el proceso ----
-    if ((ruta === "/api/proveedores" || ruta.startsWith("/api/proveedor/")) && !F.puedeVerTodo(yo)) {
+    if ((ruta.startsWith("/api/proveedores") || ruta.startsWith("/api/proveedor/") || ruta.startsWith("/api/evaluacion/")) && !F.puedeVerTodo(yo)) {
       return json(res, 403, { error: "Acceso restringido a Dirección / Admón. y finanzas / Responsable de almacén" });
     }
     if (ruta === "/api/proveedores" && req.method === "GET") {
       const lista = db.prepare("SELECT * FROM proveedores ORDER BY razon_social").all();
       const out = lista.map(p => {
-        const ev = db.prepare("SELECT datos FROM evaluaciones WHERE proveedor_id=? ORDER BY creado DESC LIMIT 1").get(p.id);
+        const ev = db.prepare("SELECT id, datos FROM evaluaciones WHERE proveedor_id=? ORDER BY creado DESC LIMIT 1").get(p.id);
         const d = ev ? JSON.parse(ev.datos || "{}") : null;
-        return { ...p, ultima_eval: d ? { total: d.total, clasificacion: d.clasificacion, fecha: d.fecha } : null };
+        return { ...p, ultima_eval: d ? { id: ev.id, total: d.total, clasificacion: d.clasificacion, fecha: d.fecha, periodo: d.periodo } : null };
       });
       return json(res, 200, out);
+    }
+    // ---- Tablero de proveedores: compras autorizadas por proveedor + última evaluación ----
+    if (ruta === "/api/proveedores/tablero" && req.method === "GET") {
+      const provs = db.prepare("SELECT * FROM proveedores ORDER BY razon_social").all();
+      const compras = {}; // proveedor_id -> [{fecha,total,moneda,folio,compra_id}]
+      for (const c of db.prepare("SELECT * FROM compras").all()) {
+        const sec = seccionesDe(c.id);
+        if ((sec.requisicion?.datos || {}).estado === "rechazada") continue;
+        const ocp = sec.oc?.datos || {};
+        const ords = ocp.ordenes || (ocp.partidas ? [ocp] : []);
+        for (const o of ords) {
+          if (!(o.estado === "autorizada" || o.estado === "enviada")) continue; // solo compras comprometidas
+          const pid = o.proveedor_id || ocp.proveedor_id || "";
+          if (!pid) continue;
+          (compras[pid] = compras[pid] || []).push({
+            fecha: (o.fecha_autorizacion || c.creado || "").slice(0, 10),
+            total: parseFloat(o.total) || 0, moneda: o.moneda || "MXN", folio: c.folio, compra_id: c.id,
+          });
+        }
+      }
+      const out = provs.map(p => {
+        const evs = db.prepare("SELECT id, datos, creado FROM evaluaciones WHERE proveedor_id=? ORDER BY creado DESC").all(p.id);
+        const d = evs.length ? JSON.parse(evs[0].datos || "{}") : null;
+        return {
+          ...p,
+          num_evaluaciones: evs.length,
+          ultima_eval: d ? { id: evs[0].id, total: d.total, clasificacion: d.clasificacion, fecha: d.fecha || evs[0].creado.slice(0, 10), periodo: d.periodo } : null,
+          compras: compras[p.id] || [],
+        };
+      });
+      return json(res, 200, out);
+    }
+    // ---- Evaluación completa (FO-GDC-04) para ver / imprimir ----
+    const mEvalGet = ruta.match(/^\/api\/evaluacion\/([^/]+)$/);
+    if (mEvalGet && req.method === "GET") {
+      const e = db.prepare("SELECT * FROM evaluaciones WHERE id=?").get(mEvalGet[1]);
+      if (!e) return json(res, 404, { error: "Evaluación no encontrada" });
+      const p = db.prepare("SELECT * FROM proveedores WHERE id=?").get(e.proveedor_id) || { razon_social: "(proveedor eliminado)" };
+      return json(res, 200, {
+        evaluacion: { id: e.id, creado: e.creado, creado_por: e.creado_por, datos: JSON.parse(e.datos || "{}"), firmas: JSON.parse(e.firmas || "[]") },
+        proveedor: p,
+      });
     }
     if (ruta === "/api/proveedores" && req.method === "POST") {
       const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");

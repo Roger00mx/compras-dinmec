@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Evaluación de proveedor — Compras SGC</title>
+<link rel="icon" href="/icono-192.png">
+<style>
+  :root{--azul:#1d3050;--naranja:#ef7d17;--linea:#c9d2dd;--gris:#5b6470;--verde:#0f9d58;--rojo:#d23f3f;--ambar:#e8a317}
+  *{box-sizing:border-box}
+  body{font-family:"Segoe UI",Arial,sans-serif;color:#1f2733;margin:0;background:#eef1f5;font-size:12.5px;line-height:1.4}
+  .hoja{background:#fff;max-width:850px;margin:14px auto;padding:26px 30px;box-shadow:0 2px 10px rgba(0,0,0,.12)}
+  .doc-cab{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;border-bottom:3px solid var(--naranja);padding-bottom:8px;margin-bottom:14px}
+  .doc-cab img{height:58px}
+  .doc-cab .emp{font-size:.72rem;color:var(--gris);margin-top:2px}
+  .doc-cab .fo{text-align:right;font-size:.78rem;color:var(--gris)}
+  .doc-cab .fo b{display:block;font-size:1.02rem;color:var(--azul)}
+  .kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:4px 18px;margin:6px 0 10px}
+  .kv div{font-size:.88rem}
+  .kv b{color:var(--gris);font-weight:600;font-size:.7rem;text-transform:uppercase;display:block}
+  table{width:100%;border-collapse:collapse;margin-top:6px}
+  th{background:var(--azul);color:#fff;text-align:left;padding:6px 8px;font-size:.72rem;text-transform:uppercase;border:1px solid var(--azul);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  td{border:1px solid var(--linea);padding:5px 8px;vertical-align:top}
+  td.concepto{font-weight:700;color:var(--azul);vertical-align:middle;background:#f6f8fb}
+  td.pts{text-align:center;width:52px;font-weight:700}
+  td.cal{text-align:center;width:90px;font-weight:800;font-size:1.05rem;vertical-align:middle}
+  tr.elegida td:not(.concepto):not(.cal){background:#fdeedd;font-weight:600;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  tr.elegida td.pts::before{content:"✔ ";color:var(--naranja)}
+  .total{display:flex;justify-content:flex-end;align-items:center;gap:14px;margin-top:10px}
+  .total .caja{border:2px solid var(--azul);border-radius:8px;padding:6px 14px;font-weight:800;font-size:1.1rem;color:var(--azul)}
+  .clasif td{font-size:.82rem}
+  .clasif tr.elegida td{background:#fdeedd;font-weight:800;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .h{color:var(--azul);font-size:.9rem;margin:16px 0 4px;text-transform:uppercase;letter-spacing:.5px}
+  .firmas{display:flex;gap:24px;margin-top:18px;flex-wrap:wrap}
+  .firma{flex:1;min-width:200px;text-align:center}
+  .firma img{height:60px;display:block;margin:0 auto}
+  .firma .linea{border-top:1.5px solid #333;margin-top:4px;padding-top:4px;font-size:.8rem}
+  .firma .rol{font-size:.72rem;color:var(--gris)}
+  .leyenda{font-size:.66rem;color:var(--gris);border-top:1px solid var(--linea);margin-top:16px;padding-top:6px}
+  .barra-acciones{position:sticky;top:0;background:linear-gradient(90deg,#152438,#1d3050);padding:10px 16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;z-index:5}
+  .barra-acciones button,.barra-acciones a{border:none;border-radius:8px;padding:9px 16px;font-weight:700;cursor:pointer;font-family:inherit;font-size:.9rem;text-decoration:none}
+  @media print{ .barra-acciones{display:none} body{background:#fff} .hoja{box-shadow:none;margin:0;max-width:100%;padding:0} @page{size:letter;margin:12mm} }
+</style>
+</head>
+<body>
+<div class="barra-acciones">
+  <a href="evaluaciones.html" style="background:rgba(255,255,255,.18);color:#fff">← Calificaciones</a>
+  <a id="aProv" href="#" style="background:rgba(255,255,255,.18);color:#fff">Ficha del proveedor</a>
+  <button onclick="window.print()" style="background:#ef7d17;color:#fff">🖨 Imprimir / Guardar PDF</button>
+</div>
+<div id="contenido"><div class="hoja">Cargando…</div></div>
+
+<script src="comun.js"></script>
+<script>
+async function inicio(){
+  const yo=await exigirSesion(); if(!yo) return;
+  const [CAT, D]=await Promise.all([api.get("/api/catalogos"), api.get("/api/evaluacion/"+paramURL("id"))]);
+  const e=escaparHTML, box=document.getElementById("contenido");
+  if(D.error){ box.innerHTML=`<div class="hoja">🔒 ${e(D.error)}</div>`; return; }
+  const ev=D.evaluacion, d=ev.datos||{}, p=D.proveedor, F=CAT.facturacion;
+  document.getElementById("aProv").href="proveedor.html?id="+(p.id||"");
+  const cal=d.calificaciones||{};
+  const filas=CAT.criterios_evaluacion.map(c=>c.opciones.map((o,i)=>`<tr class="${cal[c.id]===o.p?"elegida":""}">
+      ${i===0?`<td class="concepto" rowspan="${c.opciones.length}">${e(c.nombre)}</td>`:""}
+      <td class="pts">${o.p}</td><td>${e(o.t)}</td>
+      ${i===0?`<td class="cal" rowspan="${c.opciones.length}">${cal[c.id]??"—"}</td>`:""}
+    </tr>`).join("")).join("");
+  const clasif=CAT.clasificaciones.map(c=>`<tr class="${(d.clasificacion||"")===c.nombre?"elegida":""}"><td style="width:90px;text-align:center">${c.min}-${c.max}</td><td><b>${e(c.nombre)}</b> — ${e(c.detalle)}</td></tr>`).join("");
+  const firmas=(ev.firmas||[]).filter(f=>f.firma||f.nombre).map(f=>`<div class="firma">
+      ${f.firma?`<img src="${f.firma}">`:`<div style="height:60px"></div>`}
+      <div class="linea">${e(f.nombre||"")}</div>
+      <div class="rol">${e(f.rol)}${f.fecha?(" · "+fechaCorta(f.fecha)):""}</div></div>`).join("");
+  box.innerHTML=`<div class="hoja">
+    <div class="doc-cab">
+      <div><img src="/logo.png" alt="DINMEC GROUP" onerror="this.outerHTML='<b style=font-size:1.4rem;color:#1d3050>DINMEC GROUP</b>'">
+        <div class="emp"><b>${e(F.razon)}</b> · ${e(F.direccion1)}, ${e(F.direccion2)}</div></div>
+      <div class="fo"><b>EVALUACIÓN DE PROVEEDOR</b>${e(d.version||CAT.versiones.evaluacion)}<br>Sistema de Gestión de Calidad</div>
+    </div>
+    <div class="kv">
+      <div><b>Proveedor evaluado</b>${e(p.razon_social)}</div>
+      <div><b>Suministra</b>${e(p.suministra||"—")}</div>
+      <div><b>Fecha de evaluación</b>${fechaCorta((d.fecha||"")+"T12:00:00")||fechaCorta(ev.creado)}</div>
+      <div><b>Periodo evaluado</b>${e(d.periodo||"—")}</div>
+    </div>
+    <table><thead><tr><th>Concepto</th><th>Puntaje</th><th>Criterio</th><th>Calificación</th></tr></thead><tbody>${filas}</tbody></table>
+    <div class="total"><span style="font-weight:700;color:var(--gris)">TOTAL</span><div class="caja">${d.total??"—"} / 18</div></div>
+    <div class="h">Desempeño del proveedor</div>
+    <table class="clasif"><thead><tr><th>Puntaje</th><th>Clasificación</th></tr></thead><tbody>${clasif}</tbody></table>
+    ${d.feedback?`<div class="h">Retroalimentación al proveedor</div><div style="border:1px solid var(--linea);border-radius:6px;padding:8px">${e(d.feedback)}</div>`:""}
+    <div class="firmas">${firmas}</div>
+    <div class="leyenda">Documento generado electrónicamente por Compras SGC Digital — DINMEC GROUP. Registró: ${e(ev.creado_por||"")} el ${fechaCorta(ev.creado)}. Proceso PS-GDC-01 (etapa 8). Cada copia impresa se considera COPIA NO CONTROLADA.</div>
+  </div>`;
+  document.title="Evaluación "+(p.razon_social||"")+" — "+(d.periodo||"");
+}
+inicio();
+</script>
+</body>
+</html>

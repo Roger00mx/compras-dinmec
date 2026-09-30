@@ -17,6 +17,7 @@
 </div>
 
 <div class="contenedor">
+  <div id="subnav" class="subnav"></div>
   <div class="seccion-tit"><h2 id="titulo">Cargando…</h2><div class="crece"></div><span class="chip" id="chipEstatus"></span></div>
 
   <div class="cabecera">
@@ -51,7 +52,9 @@ async function inicio(){
   document.getElementById("usuario").textContent="👤 "+USUARIO.nombre;
   CAT=await api.get("/api/catalogos");
   document.getElementById("chipEval").textContent=CAT.versiones.evaluacion;
+  navProveedores("fichas");
   await cargar();
+  if(paramURL("evaluar") && !DATA.error) nuevaEvaluacion();
 }
 async function cargar(){
   DATA=await api.get("/api/proveedor/"+ID);
@@ -92,7 +95,7 @@ function colorClasif(c){
 }
 function pintarEvaluaciones(){
   const cont=document.getElementById("evaluaciones");
-  if(!DATA.evaluaciones.length){ cont.innerHTML=`<div class="vacio">Aún no hay evaluaciones.</div>`; return; }
+  if(!DATA.evaluaciones.length){ cont.innerHTML=`<div class="alerta-eval"><div class="tit">⚠️ EVALUAR LO ANTES POSIBLE</div><div style="font-size:.85rem;margin-top:2px">Este proveedor aún no tiene evaluación FO-GDC-04.</div><button class="btn primario chico" style="margin-top:8px" onclick="nuevaEvaluacion()">✍️ Evaluar ahora</button></div>`; return; }
   cont.innerHTML=DATA.evaluaciones.map(e=>{
     const d=e.datos;
     return `<div class="tarea" style="padding:14px 16px">
@@ -101,6 +104,7 @@ function pintarEvaluaciones(){
         <span class="chip ${colorClasif(d.clasificacion)}">${escaparHTML(d.clasificacion)} · ${d.total}/18</span>
         <div class="crece"></div>
         <span style="font-size:.8rem;color:var(--gris)">Evaluó: ${escaparHTML(e.creado_por)} · ${fechaCorta(e.creado)}</span>
+        <a class="btn-contacto" href="evaluacion.html?id=${e.id}">📄 Ver evaluación completa</a>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         ${CAT.criterios_evaluacion.map(c=>`<span class="chip gris">${c.nombre}: ${d.calificaciones?.[c.id]??"—"}</span>`).join("")}

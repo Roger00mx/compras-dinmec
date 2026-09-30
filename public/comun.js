@@ -104,3 +104,40 @@ function dinero(n, moneda){ const v=parseFloat(n)||0; return "$"+v.toLocaleStrin
 function fechaCorta(iso){ try{ if(!iso) return ""; return new Date(iso).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"}); }catch{ return ""; } }
 function hoyISO(){ return new Date().toISOString().slice(0,10); }
 function sumaDias(fechaISO, dias){ try{ const d=new Date(fechaISO+"T12:00:00"); d.setDate(d.getDate()+(parseInt(dias)||0)); return d.toISOString().slice(0,10);}catch{ return ""; } }
+
+// --- Proveedores: pestañas compartidas (Tablero · Calificaciones · Directorio · Fichas) ---
+function navProveedores(activa){
+  const t=[["tablero","📊 Tablero","tablero-proveedores.html"],["evaluaciones","⭐ Calificaciones","evaluaciones.html"],
+    ["directorio","📇 Directorio de contactos","directorio-proveedores.html"],["fichas","🏭 Fichas / alta","proveedores.html"]];
+  const n=document.getElementById("subnav");
+  if(n) n.innerHTML=t.map(([id,et,url])=>`<a href="${url}" class="${id===activa?"activa":""}">${et}</a>`).join("");
+}
+// Tipo de pago del proveedor según su ficha
+function tipoPago(p){
+  const c=(p.condicion_pago||"").toLowerCase(), d=parseInt(p.credito_dias)||0;
+  if(/anticipo/.test(c)) return {id:"anticipo",et:"Anticipo",color:"ambar"};
+  if(d>0||/cr[eé]dito/.test(c)) return {id:"credito",et:"Crédito "+(d||(c.match(/\d+/)||[""])[0])+" días",dias:d||parseInt((c.match(/\d+/)||[0])[0])||0,color:"verde"};
+  if(/contado/.test(c)) return {id:"contado",et:"Solo contado",color:"rojo"};
+  return {id:"sd",et:"Sin definir",color:"gris"};
+}
+// Estado de evaluación: sin evaluar / vencida (> 6 meses, PS-GDC-01 8.3) / vigente
+function estadoEval(p){
+  const u=p.ultima_eval;
+  if(!u) return {id:"sin",et:"⚠️ EVALUAR LO ANTES POSIBLE"};
+  const f=new Date((u.fecha||"")+"T12:00:00"), lim=new Date(); lim.setMonth(lim.getMonth()-6);
+  if(!isNaN(f)&&f<lim) return {id:"vencida",et:"Reevaluación vencida"};
+  return {id:"vigente",et:"Vigente"};
+}
+function colorClasifEval(c){
+  if(!c) return "gris";
+  if(/excelente/i.test(c)) return "verde";
+  if(/bueno/i.test(c)) return "azul";
+  if(/regular/i.test(c)) return "ambar";
+  return "rojo";
+}
+function telLimpio(t){ return (t||"").replace(/[^\d+]/g,""); }
+function waLink(t){ let d=(t||"").replace(/\D/g,""); if(d.length===10) d="52"+d; return d.length>=10?"https://wa.me/"+d:""; }
+function encabezadoDinmec(titulo, fo){
+  return `<div class="doc-cab-imp"><div><img src="/logo.png" alt="DINMEC GROUP"><div class="emp"><b>DINMEC GROUP SRL DE CV</b> · Calle 10 Poniente No. 506-C, Col. Centro, San Pedro Cholula, Pue. C.P. 72760</div></div>
+    <div class="fo"><b>${titulo}</b>${fo}<br>Impreso: ${new Date().toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"})}</div></div>`;
+}

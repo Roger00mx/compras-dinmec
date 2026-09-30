@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Calificaciones de proveedores — Compras SGC</title>
+<meta name="theme-color" content="#1d3050">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div class="barra">
+  <div class="logo" style="cursor:pointer" onclick="location.href='index.html'">← <img src="/logo.png" alt="DINMEC GROUP" class="logo-img" onerror="this.outerHTML='<b>DINMEC</b>'"> <span>Proveedores</span></div>
+  <div class="crece"></div>
+  <div class="usuario" id="usuario">…</div>
+</div>
+
+<div class="contenedor">
+  <div id="subnav" class="subnav"></div>
+  <div class="solo-impresion" id="encImp"></div>
+
+  <div id="alertas"></div>
+
+  <div class="filtros">
+    <input class="buscar" id="buscar" placeholder="🔎 Buscar proveedor o insumo…" oninput="pintar()">
+    <div class="filtro activo" data-f="todos" onclick="filtrar(this)">Todos</div>
+    <div class="filtro" data-f="sin" onclick="filtrar(this)">⚠️ Sin evaluar</div>
+    <div class="filtro" data-f="vencida" onclick="filtrar(this)">Vencidas</div>
+    <div class="filtro" data-f="Excelente" onclick="filtrar(this)">Excelente</div>
+    <div class="filtro" data-f="Bueno" onclick="filtrar(this)">Bueno</div>
+    <div class="filtro" data-f="Regular" onclick="filtrar(this)">Regular</div>
+    <div class="filtro" data-f="No confiable" onclick="filtrar(this)">No confiable</div>
+    <button class="btn fantasma chico no-imprimir" onclick="window.print()">🖨 Imprimir</button>
+  </div>
+
+  <div class="tabla-caja">
+    <table class="tabla-prov responsiva">
+      <thead><tr>
+        <th onclick="ordenar('razon_social')">Proveedor ⇅</th>
+        <th onclick="ordenar('pts')">Calificación ⇅</th>
+        <th>Clasificación</th>
+        <th onclick="ordenar('fecha')">Última evaluación ⇅</th>
+        <th>Estatus</th>
+        <th class="no-imprimir">Evaluación</th>
+      </tr></thead>
+      <tbody id="cuerpo"></tbody>
+    </table>
+  </div>
+  <p style="font-size:.78rem;color:var(--gris);margin-top:10px">Escala FO-GDC-04: máx. 18 pts · 16-18 Excelente · 11-15 Bueno · 6-10 Regular (condicionado) · 0-5 No confiable (restringido). Reevaluación semestral (PS-GDC-01, 8.3).</p>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let USUARIO, LISTA=[], FIL="todos", ORD={k:"pts",dir:1};
+async function inicio(){
+  USUARIO=await exigirSesion(); if(!USUARIO) return;
+  document.getElementById("usuario").textContent="👤 "+USUARIO.nombre;
+  navProveedores("evaluaciones");
+  document.getElementById("encImp").innerHTML=encabezadoDinmec("CALIFICACIÓN DE PROVEEDORES","FO-GDC-04 Ver. 00 · Resumen");
+  LISTA=await api.get("/api/proveedores");
+  if(LISTA.error){ document.querySelector(".contenedor").innerHTML=`<div class="vacio">🔒 ${escaparHTML(LISTA.error)}</div>`; return; }
+  LISTA=LISTA.filter(p=>p.estatus!=="Inactivo");
+  if(paramURL("f")){ const el=document.querySelector(`[data-f="${paramURL("f")}"]`); if(el) return filtrar(el); }
+  pintar();
+}
+function filtrar(el){ document.querySelectorAll("[data-f]").forEach(f=>f.classList.remove("activo")); el.classList.add("activo"); FIL=el.dataset.f; pintar(); }
+function ordenar(k){ ORD={k, dir:ORD.k===k?-ORD.dir:1}; pintar(); }
+
+function pintar(){
+  const q=(document.getElementById("buscar").value||"").toLowerCase();
+  const sin=LISTA.filter(p=>!p.ultima_eval);
+  document.getElementById("alertas").innerHTML=sin.length?`<div class="alerta-eval"><div class="tit">⚠️ EVALUAR LO ANTES POSIBLE — ${sin.length} proveedor${sin.length>1?"es":""} sin evaluación</div>
+    <div class="chips">${sin.map(p=>`<a class="chip" href="proveedor.html?id=${p.id}&evaluar=1">${escaparHTML(p.razon_social)}</a>`).join("")}</div></div>`:"";
+
+  let fil=LISTA.filter(p=>{
+    if(q && !(p.razon_social||"").toLowerCase().includes(q) && !(p.suministra||"").toLowerCase().includes(q)) return false;
+    const ev=estadoEval(p);
+    if(FIL==="sin") return ev.id==="sin";
+    if(FIL==="vencida") return ev.id==="vencida";
+    if(FIL!=="todos") return p.ultima_eval && new RegExp("^"+FIL,"i").test(p.ultima_eval.clasificacion||"");
+    return true;
+  });
+  const val=p=>ORD.k==="pts"?(p.ultima_eval?p.ultima_eval.total:-1):(ORD.k==="fecha"?(p.ultima_eval?.fecha||""):(p.razon_social||"").toLowerCase());
+  fil.sort((a,b)=>{
+    // Sin evaluar siempre arriba (es la alerta), luego el orden elegido
+    const sa=a.ultima_eval?1:0, sb=b.ultima_eval?1:0; if(sa!==sb) return sa-sb;
+    const va=val(a), vb=val(b); const r=va<vb?-1:(va>vb?1:0);
+    return ORD.k==="razon_social"?r*ORD.dir:-r*ORD.dir;
+  });
+  const cuerpo=document.getElementById("cuerpo");
+  if(!fil.length){ cuerpo.innerHTML=`<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--gris)">Sin proveedores en este filtro.</td></tr>`; return; }
+  cuerpo.innerHTML=fil.map(p=>{
+    const u=p.ultima_eval, ev=estadoEval(p), col=colorClasifEval(u?.clasificacion);
+    return `<tr>
+      <td data-et="Proveedor"><div><a class="nom" href="proveedor.html?id=${p.id}">${escaparHTML(p.razon_social)}</a><div class="sub">${escaparHTML(p.suministra||"")}</div></div></td>
+      <td data-et="Puntaje">${u?`<span class="pts" style="color:var(--${col==="azul"?"azul-claro":col})">${u.total}</span><span class="sub"> / 18</span>`:`<span class="chip chip-alerta">⚠️ EVALUAR LO ANTES POSIBLE</span>`}</td>
+      <td data-et="Clasificación">${u?`<span class="chip ${col}">${escaparHTML(u.clasificacion)}</span>`:"—"}</td>
+      <td data-et="Evaluada">${u?`${fechaCorta((u.fecha||"")+"T12:00:00")}<div class="sub">${escaparHTML(u.periodo||"")}</div>`:"—"}${ev.id==="vencida"?`<div><span class="chip ambar">🕓 Reevaluar</span></div>`:""}</td>
+      <td data-et="Estatus"><span class="chip ${p.estatus==="Restringido"?"rojo":(p.estatus==="Condicionado"?"ambar":"verde")}">${escaparHTML(p.estatus||"Aprobado")}</span></td>
+      <td data-et="" class="no-imprimir"><div class="acc">
+        ${u?`<a class="btn-contacto" href="evaluacion.html?id=${u.id}">📄 Ver completa</a>`:""}
+        <a class="btn-contacto mail" href="proveedor.html?id=${p.id}&evaluar=1">${u?"↻ Reevaluar":"✍️ Evaluar"}</a>
+      </div></td>
+    </tr>`;
+  }).join("");
+}
+inicio();
+</script>
+</body>
+</html>

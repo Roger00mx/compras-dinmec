@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Tablero de proveedores — Compras SGC</title>
+<meta name="theme-color" content="#1d3050">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div class="barra">
+  <div class="logo" style="cursor:pointer" onclick="location.href='index.html'">← <img src="/logo.png" alt="DINMEC GROUP" class="logo-img" onerror="this.outerHTML='<b>DINMEC</b>'"> <span>Proveedores</span></div>
+  <div class="crece"></div>
+  <div class="usuario" id="usuario">…</div>
+</div>
+
+<div class="contenedor">
+  <div id="subnav" class="subnav"></div>
+
+  <div class="filtros">
+    <b style="font-size:.85rem;color:var(--gris)">Periodo:</b>
+    <div class="filtro activo" data-p="anio" onclick="periodo(this)">Este año</div>
+    <div class="filtro" data-p="12m" onclick="periodo(this)">Últimos 12 meses</div>
+    <div class="filtro" data-p="sem" onclick="periodo(this)">Últimos 6 meses</div>
+    <div class="filtro" data-p="todo" onclick="periodo(this)">Todo</div>
+    <div class="crece" style="flex:1"></div>
+    <label style="font-size:.8rem;color:var(--gris);font-weight:600">TC USD
+      <input id="tc" type="number" step="0.01" value="18.50" style="width:78px;border:1.5px solid var(--linea);border-radius:8px;padding:6px 8px;font-family:inherit" onchange="pintar()">
+    </label>
+  </div>
+
+  <div id="alertas"></div>
+  <div class="kpis" id="kpis"></div>
+
+  <div class="dos-col">
+    <div class="panel">
+      <h3>🔝 ¿A quién le compramos más? <span class="crece"></span><span class="chip gris" id="chipTot"></span></h3>
+      <div class="rank" id="rankMas"></div>
+    </div>
+    <div class="panel">
+      <h3>🔻 ¿A quién le compramos menos?</h3>
+      <div class="rank" id="rankMenos"></div>
+      <div id="sinCompras" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>💳 Condiciones de pago</h3>
+    <div class="barra-dist" id="distPago"></div>
+    <div class="leyenda-dist" id="leyPago"></div>
+    <div class="dos-col" style="margin-top:14px">
+      <div><div style="font-weight:800;color:var(--verde);margin-bottom:4px">✅ Nos dan crédito</div><div class="lista-simple" id="lstCredito"></div></div>
+      <div><div style="font-weight:800;color:var(--rojo);margin-bottom:4px">💵 Exclusivos de contado / anticipo</div><div class="lista-simple" id="lstContado"></div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>⭐ Desempeño de proveedores (FO-GDC-04) <span class="crece"></span><a class="btn fantasma chico" href="evaluaciones.html">Ver calificaciones →</a></h3>
+    <div class="barra-dist" id="distEval"></div>
+    <div class="leyenda-dist" id="leyEval"></div>
+  </div>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let USUARIO, LISTA=[], PER="anio";
+async function inicio(){
+  USUARIO=await exigirSesion(); if(!USUARIO) return;
+  document.getElementById("usuario").textContent="👤 "+USUARIO.nombre;
+  navProveedores("tablero");
+  LISTA=await api.get("/api/proveedores/tablero");
+  if(LISTA.error){ document.querySelector(".contenedor").innerHTML=`<div class="vacio">🔒 ${escaparHTML(LISTA.error)}</div>`; return; }
+  pintar();
+}
+function periodo(el){ document.querySelectorAll("[data-p]").forEach(f=>f.classList.remove("activo")); el.classList.add("activo"); PER=el.dataset.p; pintar(); }
+function desde(){
+  const d=new Date();
+  if(PER==="anio") return d.getFullYear()+"-01-01";
+  if(PER==="12m"){ d.setFullYear(d.getFullYear()-1); return d.toISOString().slice(0,10); }
+  if(PER==="sem"){ d.setMonth(d.getMonth()-6); return d.toISOString().slice(0,10); }
+  return "0000";
+}
+const mxn=v=>"$"+Math.round(v).toLocaleString("es-MX");
+
+function pintar(){
+  const tc=parseFloat(document.getElementById("tc").value)||0, ini=desde();
+  const activos=LISTA.filter(p=>p.estatus!=="Inactivo");
+  const filas=activos.map(p=>{
+    const cs=p.compras.filter(c=>c.fecha>=ini);
+    const monto=cs.reduce((s,c)=>s+(c.moneda==="USD"?c.total*tc:c.total),0);
+    const usd=cs.filter(c=>c.moneda==="USD").reduce((s,c)=>s+c.total,0);
+    const ult=p.compras.map(c=>c.fecha).sort().pop()||"";
+    return {p, monto, usd, n:cs.length, ult, pago:tipoPago(p), ev:estadoEval(p)};
+  });
+  const total=filas.reduce((s,f)=>s+f.monto,0);
+  const conCompra=filas.filter(f=>f.monto>0).sort((a,b)=>b.monto-a.monto);
+  const sin=filas.filter(f=>f.ev.id==="sin"), venc=filas.filter(f=>f.ev.id==="vencida");
+  const cred=filas.filter(f=>f.pago.id==="credito"), cont=filas.filter(f=>f.pago.id==="contado"||f.pago.id==="anticipo");
+
+  // Alertas
+  const lnk=f=>`<a class="chip" href="proveedor.html?id=${f.p.id}&evaluar=1">${escaparHTML(f.p.razon_social)}${f.n?` · ${f.n} OC`:""}</a>`;
+  document.getElementById("alertas").innerHTML=
+    (sin.length?`<div class="alerta-eval"><div class="tit">⚠️ EVALUAR LO ANTES POSIBLE — ${sin.length} proveedor${sin.length>1?"es":""} sin evaluación (FO-GDC-04)</div>
+      <div style="font-size:.84rem;margin-top:2px">Primero los que ya tienen compras. Toca uno para abrir la evaluación.</div>
+      <div class="chips">${sin.sort((a,b)=>b.monto-a.monto||b.n-a.n).map(lnk).join("")}</div></div>`:"")+
+    (venc.length?`<div class="alerta-eval ambar"><div class="tit">🕓 Reevaluación semestral vencida — ${venc.length} proveedor${venc.length>1?"es":""} (PS-GDC-01, 8.3)</div>
+      <div class="chips">${venc.map(lnk).join("")}</div></div>`:"");
+
+  // KPIs
+  const pctCred=total?Math.round(cred.reduce((s,f)=>s+f.monto,0)/total*100):0;
+  document.getElementById("kpis").innerHTML=`
+    <div class="kpi"><div class="et">Proveedores activos</div><div class="v">${activos.length}</div><div class="s">${conCompra.length} con compras en el periodo</div></div>
+    <div class="kpi"><div class="et">Comprado en el periodo</div><div class="v">${mxn(total)}</div><div class="s">MXN (USD × TC) · ${filas.reduce((s,f)=>s+f.n,0)} OC autorizadas</div></div>
+    <div class="kpi"><div class="et">Nos dan crédito</div><div class="v">${cred.length}</div><div class="s">${pctCred}% del monto comprado</div></div>
+    <div class="kpi"><div class="et">Solo contado / anticipo</div><div class="v">${cont.length}</div><div class="s">${filas.filter(f=>f.pago.id==="sd").length} sin condición definida</div></div>
+    <div class="kpi ${sin.length?"rojo":""}"><div class="et">Sin evaluar</div><div class="v">${sin.length}</div><div class="s">${sin.length?"Evaluar lo antes posible":"Todos evaluados ✓"}</div></div>
+    <div class="kpi ${venc.length?"ambar":""}"><div class="et">Reevaluación vencida</div><div class="v">${venc.length}</div><div class="s">Más de 6 meses</div></div>`;
+
+  // Ranking
+  document.getElementById("chipTot").textContent=mxn(total)+" MXN";
+  const max=conCompra[0]?.monto||1;
+  const fila=(f,i)=>`<div class="rank-fila" title="${escaparHTML(f.p.razon_social)} — ${mxn(f.monto)} · ${f.n} OC" onclick="location.href='proveedor.html?id=${f.p.id}'">
+      <div class="n">${i}</div><div class="nom">${escaparHTML(f.p.razon_social)}</div>
+      <div class="pista"><i style="width:${Math.max(1,f.monto/max*100)}%"></i></div>
+      <div class="val">${mxn(f.monto)}<small>${total?(f.monto/total*100).toFixed(1):0}% · ${f.n} OC${f.usd?` · incl. US$${Math.round(f.usd).toLocaleString("es-MX")}`:""}</small></div></div>`;
+  const vacio=`<div class="vacio" style="padding:24px">Sin compras autorizadas en el periodo.</div>`;
+  document.getElementById("rankMas").innerHTML=conCompra.length?conCompra.slice(0,10).map((f,i)=>fila(f,i+1)).join(""):vacio;
+  const menos=conCompra.slice(Math.max(10,conCompra.length-8)).reverse();
+  document.getElementById("rankMenos").innerHTML=conCompra.length>10?menos.map(f=>fila(f,conCompra.indexOf(f)+1)).join("")
+    :(conCompra.length?conCompra.slice().reverse().slice(0,5).map(f=>fila(f,conCompra.indexOf(f)+1)).join(""):vacio);
+  const sinC=filas.filter(f=>!f.monto);
+  document.getElementById("sinCompras").innerHTML=sinC.length?`<div style="font-size:.8rem;font-weight:700;color:var(--gris);margin-bottom:4px">SIN COMPRAS EN EL PERIODO (${sinC.length})</div>
+    <div class="lista-simple">${sinC.map(f=>`<a href="proveedor.html?id=${f.p.id}"><span>${escaparHTML(f.p.razon_social)}</span><span class="sub" style="color:var(--gris);font-size:.78rem">${f.ult?"Última: "+fechaCorta(f.ult+"T12:00:00"):"Nunca"}</span></a>`).join("")}</div>`:"";
+
+  // Condiciones de pago
+  const grupos=[["credito","Crédito","var(--verde)"],["contado","Solo contado","var(--rojo)"],["anticipo","Anticipo","var(--ambar)"],["sd","Sin definir","#9aa3ad"]];
+  const cuenta=id=>filas.filter(f=>f.pago.id===id).length;
+  document.getElementById("distPago").innerHTML=grupos.filter(g=>cuenta(g[0])).map(g=>`<i title="${g[1]}: ${cuenta(g[0])}" style="flex:${cuenta(g[0])};background:${g[2]}"></i>`).join("");
+  document.getElementById("leyPago").innerHTML=grupos.map(g=>`<span><b style="background:${g[2]}"></b>${g[1]}: <strong>${cuenta(g[0])}</strong></span>`).join("");
+  const itemP=f=>`<a href="directorio-proveedores.html?q=${encodeURIComponent(f.p.razon_social)}"><span>${escaparHTML(f.p.razon_social)}</span><span class="chip ${f.pago.color}">${escaparHTML(f.pago.et)}</span></a>`;
+  document.getElementById("lstCredito").innerHTML=cred.sort((a,b)=>(b.pago.dias||0)-(a.pago.dias||0)).map(itemP).join("")||`<div class="sub" style="padding:8px;color:var(--gris)">Ninguno</div>`;
+  document.getElementById("lstContado").innerHTML=cont.map(itemP).join("")||`<div class="sub" style="padding:8px;color:var(--gris)">Ninguno</div>`;
+
+  // Desempeño
+  const cls=[["Excelente","var(--verde)"],["Bueno","var(--azul-claro)"],["Regular","var(--ambar)"],["No confiable","var(--rojo)"]];
+  const cEval=n=>filas.filter(f=>f.p.ultima_eval&&new RegExp("^"+n,"i").test(f.p.ultima_eval.clasificacion||"")).length;
+  const partes=[...cls.map(c=>[c[0],c[1],cEval(c[0])]),["Sin evaluar","#9aa3ad",sin.length]];
+  document.getElementById("distEval").innerHTML=partes.filter(x=>x[2]).map(x=>`<i title="${x[0]}: ${x[2]}" style="flex:${x[2]};background:${x[1]}"></i>`).join("");
+  document.getElementById("leyEval").innerHTML=partes.map(x=>`<span><b style="background:${x[1]}"></b>${x[0]}: <strong>${x[2]}</strong></span>`).join("");
+}
+inicio();
+</script>
+</body>
+</html>
