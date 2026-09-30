@@ -223,6 +223,57 @@ const clientesSSE = new Set();
 function avisarCambio(compraId, motivo) {
   const msg = `data: ${JSON.stringify({ compraId, motivo, t: ahora() })}\n\n`;
   for (const c of clientesSSE) { try { c.write(msg); } catch (_) {} }
+  programarSyncFin();
+}
+
+// ---------- Enlace con dinmec-app · Finanzas (cuentas por pagar, PS-ADM-02) ----------
+// Manda TODAS las facturas de proveedor (FO-GDC-06) a la base de dinmec-app cada vez que algo
+// cambia en un expediente, al arrancar y cada 30 min. Se activa con 3 variables de entorno en Render:
+//   FIN_SUPABASE_URL, FIN_SUPABASE_KEY (anon key de dinmec-app) y FIN_TOKEN (fin_config.token_compras).
+// Lo que Administración marque como pagado en dinmec-app no se pierde (la función SQL lo conserva).
+const FIN = { url: (process.env.FIN_SUPABASE_URL || "").replace(/\/+$/, ""), key: process.env.FIN_SUPABASE_KEY || "", token: process.env.FIN_TOKEN || "" };
+let finTimer = null, finEnCurso = false, finPendiente = false;
+function facturasParaFin() {
+  const out = [];
+  for (const c of db.prepare("SELECT * FROM compras").all()) {
+    const sec = seccionesDe(c.id);
+    const ocp = sec.oc?.datos || {};
+    for (const f of ((sec.cxp?.datos || {}).facturas || [])) {
+      const pid = f.proveedor_id || ocp.proveedor_id || "";
+      const p = pid ? db.prepare("SELECT * FROM proveedores WHERE id=?").get(pid) : null;
+      const arch = db.prepare("SELECT archivo FROM archivos WHERE compra_id=? AND seccion=? ORDER BY subido LIMIT 1").get(c.id, "fact:" + f.id);
+      out.push({
+        id: f.id, compra_id: c.id, folio_compra: c.folio || "", proyecto: [c.proyecto, c.cliente].filter(Boolean).join(" · "),
+        proveedor: p ? p.razon_social : "(Sin proveedor)", proveedor_rfc: p ? p.rfc || "" : "", proveedor_id: pid,
+        factura: f.folio || "", fecha: f.fecha || "", moneda: f.moneda || "MXN", importe: String(f.importe || "0"),
+        dias_credito: p && p.credito_dias != null ? String(p.credito_dias) : "", vencimiento: f.vencimiento || "",
+        autorizada: !!f.autorizada, autorizada_por: f.autorizada_por || null, fecha_autorizacion: f.fecha_autorizacion || "",
+        pagada: !!f.pagada, fecha_pago: f.fecha_pago || "", pagada_por: f.pagada_por || null,
+        archivo_url: arch && URL_APP ? URL_APP + "/archivo/" + arch.archivo : null,
+      });
+    }
+  }
+  return out;
+}
+async function syncFin() {
+  if (!FIN.url || !FIN.key || !FIN.token) return;
+  if (finEnCurso) { finPendiente = true; return; }
+  finEnCurso = true;
+  try {
+    const r = await fetch(FIN.url + "/rest/v1/rpc/fin_sync_cxp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: FIN.key, Authorization: "Bearer " + FIN.key },
+      body: JSON.stringify({ p_token: FIN.token, p_facturas: facturasParaFin(), p_completo: true }),
+    });
+    if (!r.ok) console.log("Finanzas (dinmec-app): error " + r.status + " " + (await r.text()).slice(0, 200));
+  } catch (e) { console.log("Finanzas (dinmec-app): " + e.message); }
+  finEnCurso = false;
+  if (finPendiente) { finPendiente = false; programarSyncFin(); }
+}
+function programarSyncFin() {
+  if (!FIN.url) return;
+  clearTimeout(finTimer);
+  finTimer = setTimeout(syncFin, 3000);
 }
 
 // ---------- Bitácora (audit trail del SGC) ----------
@@ -893,6 +944,7 @@ const servidor = http.createServer(async (req, res) => {
 });
 
 servidor.listen(PUERTO, "0.0.0.0", () => {
+  if (FIN.url) { setTimeout(syncFin, 10000); setInterval(syncFin, 30 * 60 * 1000); console.log("   Enlace Finanzas dinmec-app: activo"); }
   const ips = ipsLocales();
   console.log("\n==================================================");
   console.log("   COMPRAS SGC DIGITAL  -  DINMEC SGC 2026");
