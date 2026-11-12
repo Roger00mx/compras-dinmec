@@ -223,57 +223,6 @@ const clientesSSE = new Set();
 function avisarCambio(compraId, motivo) {
   const msg = `data: ${JSON.stringify({ compraId, motivo, t: ahora() })}\n\n`;
   for (const c of clientesSSE) { try { c.write(msg); } catch (_) {} }
-  programarSyncFin();
-}
-
-// ---------- Enlace con dinmec-app · Finanzas (cuentas por pagar, PS-ADM-02) ----------
-// Manda TODAS las facturas de proveedor (FO-GDC-06) a la base de dinmec-app cada vez que algo
-// cambia en un expediente, al arrancar y cada 30 min. Se activa con 3 variables de entorno en Render:
-//   FIN_SUPABASE_URL, FIN_SUPABASE_KEY (anon key de dinmec-app) y FIN_TOKEN (fin_config.token_compras).
-// Lo que Administración marque como pagado en dinmec-app no se pierde (la función SQL lo conserva).
-const FIN = { url: (process.env.FIN_SUPABASE_URL || "").replace(/\/+$/, ""), key: process.env.FIN_SUPABASE_KEY || "", token: process.env.FIN_TOKEN || "" };
-let finTimer = null, finEnCurso = false, finPendiente = false;
-function facturasParaFin() {
-  const out = [];
-  for (const c of db.prepare("SELECT * FROM compras").all()) {
-    const sec = seccionesDe(c.id);
-    const ocp = sec.oc?.datos || {};
-    for (const f of ((sec.cxp?.datos || {}).facturas || [])) {
-      const pid = f.proveedor_id || ocp.proveedor_id || "";
-      const p = pid ? db.prepare("SELECT * FROM proveedores WHERE id=?").get(pid) : null;
-      const arch = db.prepare("SELECT archivo FROM archivos WHERE compra_id=? AND seccion=? ORDER BY subido LIMIT 1").get(c.id, "fact:" + f.id);
-      out.push({
-        id: f.id, compra_id: c.id, folio_compra: c.folio || "", proyecto: [c.proyecto, c.cliente].filter(Boolean).join(" · "),
-        proveedor: p ? p.razon_social : "(Sin proveedor)", proveedor_rfc: p ? p.rfc || "" : "", proveedor_id: pid,
-        factura: f.folio || "", fecha: f.fecha || "", moneda: f.moneda || "MXN", importe: String(f.importe || "0"),
-        dias_credito: p && p.credito_dias != null ? String(p.credito_dias) : "", vencimiento: f.vencimiento || "",
-        autorizada: !!f.autorizada, autorizada_por: f.autorizada_por || null, fecha_autorizacion: f.fecha_autorizacion || "",
-        pagada: !!f.pagada, fecha_pago: f.fecha_pago || "", pagada_por: f.pagada_por || null,
-        archivo_url: arch && URL_APP ? URL_APP + "/archivo/" + arch.archivo : null,
-      });
-    }
-  }
-  return out;
-}
-async function syncFin() {
-  if (!FIN.url || !FIN.key || !FIN.token) return;
-  if (finEnCurso) { finPendiente = true; return; }
-  finEnCurso = true;
-  try {
-    const r = await fetch(FIN.url + "/rest/v1/rpc/fin_sync_cxp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", apikey: FIN.key, Authorization: "Bearer " + FIN.key },
-      body: JSON.stringify({ p_token: FIN.token, p_facturas: facturasParaFin(), p_completo: true }),
-    });
-    if (!r.ok) console.log("Finanzas (dinmec-app): error " + r.status + " " + (await r.text()).slice(0, 200));
-  } catch (e) { console.log("Finanzas (dinmec-app): " + e.message); }
-  finEnCurso = false;
-  if (finPendiente) { finPendiente = false; programarSyncFin(); }
-}
-function programarSyncFin() {
-  if (!FIN.url) return;
-  clearTimeout(finTimer);
-  finTimer = setTimeout(syncFin, 3000);
 }
 
 // ---------- Bitácora (audit trail del SGC) ----------
@@ -316,11 +265,11 @@ function resumenExpediente(sec) {
   const cxp = sec.cxp?.datos || {};
   if (req.estado === "rechazada") return { etiqueta: "Rechazada", color: "rojo", pct: 0 };
   let pasos = 0;
-  if (req.estado === "autorizada") pasos = 1; else if (req.estado === "solicitada") return { etiqueta: "Pendiente de autorizar", color: "ambar", pct: 8 };
+  if (req.estado === "autorizada" || req.estado === "solicitada") pasos = 1;
   else return { etiqueta: "Borrador", color: "gris", pct: 0 };
-  let etiqueta = "Requisición autorizada";
-  if (sel.estado === "aprobada") { pasos = 2; etiqueta = "Selección aprobada"; }
-  else if ((sel.cotizaciones || []).some((c) => c.seleccionado)) return { etiqueta: "Selección por aprobar (DG)", color: "ambar", pct: 30 };
+  let etiqueta = "Requisición registrada";
+  if (sel.estado === "aprobada") { pasos = 2; etiqueta = "Selección confirmada"; }
+  else if ((sel.cotizaciones || []).some((c) => c.seleccionado)) return { etiqueta: "Selección por confirmar", color: "ambar", pct: 30 };
   else if ((sel.cotizaciones || []).length) return { etiqueta: "En cotización", color: "ambar", pct: 25 };
   const ords = oc.ordenes || (oc.partidas ? [oc] : []);
   if (ords.length && ords.every(o => o.estado === "enviada")) { pasos = 3; etiqueta = "OC enviada"; }
@@ -349,10 +298,8 @@ function validarPermisos(yo, seccion, previo, nuevo) {
   const esAut = F.puedeAutorizar(yo);
   const p = previo?.datos || {}, n = nuevo || {};
   const cambia = (campo, valor) => p[campo] !== valor && n[campo] === valor;
-  if (seccion === "requisicion" && (cambia("estado", "autorizada") || cambia("estado", "rechazada")) && !esAut)
-    return "Solo Dirección general puede autorizar o rechazar la requisición";
-  if (seccion === "seleccion" && cambia("estado", "aprobada") && !esAut)
-    return "Solo Dirección general puede aprobar la selección de proveedor";
+  // Flujo ágil (nov 2026): la requisición y la selección ya NO requieren autorización
+  // de Dirección general; la única autorización obligatoria es la de la ORDEN DE COMPRA.
   if (seccion === "oc") {
     if (cambia("estado", "autorizada") && !esAut) return "Solo Dirección o Admón. y finanzas pueden autorizar la orden de compra";
     const po = p.ordenes || [], no_ = n.ordenes || [];
@@ -638,20 +585,11 @@ const servidor = http.createServer(async (req, res) => {
       registrarBitacora(mSec[1], yo.nombre, "Guardar", describirCambio(seccion, previo, datos));
       avisarCambio(mSec[1], seccion);
       // Avisos por WhatsApp
-      if (seccion === "requisicion" && (datos || {}).estado === "solicitada" && ((previo?.datos || {}).estado || "") !== "solicitada") {
+      if (seccion === "requisicion" && ["autorizada", "solicitada"].includes((datos || {}).estado || "") && !["autorizada", "solicitada"].includes(((previo?.datos || {}).estado || ""))) {
         const cW = db.prepare("SELECT folio FROM compras WHERE id=?").get(mSec[1]);
         const p1 = (((datos || {}).partidas || [])[0] || {}).descripcion || "";
         notificarWhats("requisicion", "📩 COMPRAS DINMEC\nNueva requisición REQ-" + (cW?.folio || "") + " de " + yo.nombre +
-          (p1 ? ("\nMaterial: " + p1) : "") + "\n⏳ PENDIENTE DE AUTORIZAR\n" + urlApp("/compra.html?id=" + mSec[1]));
-      }
-      if (seccion === "seleccion" && ((datos || {}).estado || "") !== "aprobada") {
-        const teniaSel = ((previo?.datos || {}).cotizaciones || []).some((c) => c.seleccionado);
-        const tieneSel = ((datos || {}).cotizaciones || []).some((c) => c.seleccionado);
-        if (tieneSel && !teniaSel) {
-          const cW = db.prepare("SELECT folio FROM compras WHERE id=?").get(mSec[1]);
-          notificarWhats("autorizar", "⏳ COMPRAS DINMEC\nSelección de proveedor POR APROBAR (Dirección general) en REQ-" + (cW?.folio || "") +
-            "\nCapturó: " + yo.nombre + "\n" + urlApp("/compra.html?id=" + mSec[1]));
-        }
+          (p1 ? ("\nMaterial: " + p1) : "") + "\nRegistrada — sigue la cotización\n" + urlApp("/compra.html?id=" + mSec[1]));
       }
       if (seccion === "oc") {
         const antesN = ((previo?.datos || {}).ordenes || []).length, ahoraN = ((datos || {}).ordenes || []).length;
@@ -704,59 +642,17 @@ const servidor = http.createServer(async (req, res) => {
     }
 
     // ---- Proveedores (FO-GDC-05) — solo quienes ven todo el proceso ----
-    if ((ruta.startsWith("/api/proveedores") || ruta.startsWith("/api/proveedor/") || ruta.startsWith("/api/evaluacion/")) && !F.puedeVerTodo(yo)) {
+    if ((ruta === "/api/proveedores" || ruta.startsWith("/api/proveedor/")) && !F.puedeVerTodo(yo)) {
       return json(res, 403, { error: "Acceso restringido a Dirección / Admón. y finanzas / Responsable de almacén" });
     }
     if (ruta === "/api/proveedores" && req.method === "GET") {
       const lista = db.prepare("SELECT * FROM proveedores ORDER BY razon_social").all();
       const out = lista.map(p => {
-        const ev = db.prepare("SELECT id, datos FROM evaluaciones WHERE proveedor_id=? ORDER BY creado DESC LIMIT 1").get(p.id);
+        const ev = db.prepare("SELECT datos FROM evaluaciones WHERE proveedor_id=? ORDER BY creado DESC LIMIT 1").get(p.id);
         const d = ev ? JSON.parse(ev.datos || "{}") : null;
-        return { ...p, ultima_eval: d ? { id: ev.id, total: d.total, clasificacion: d.clasificacion, fecha: d.fecha, periodo: d.periodo } : null };
+        return { ...p, ultima_eval: d ? { total: d.total, clasificacion: d.clasificacion, fecha: d.fecha } : null };
       });
       return json(res, 200, out);
-    }
-    // ---- Tablero de proveedores: compras autorizadas por proveedor + última evaluación ----
-    if (ruta === "/api/proveedores/tablero" && req.method === "GET") {
-      const provs = db.prepare("SELECT * FROM proveedores ORDER BY razon_social").all();
-      const compras = {}; // proveedor_id -> [{fecha,total,moneda,folio,compra_id}]
-      for (const c of db.prepare("SELECT * FROM compras").all()) {
-        const sec = seccionesDe(c.id);
-        if ((sec.requisicion?.datos || {}).estado === "rechazada") continue;
-        const ocp = sec.oc?.datos || {};
-        const ords = ocp.ordenes || (ocp.partidas ? [ocp] : []);
-        for (const o of ords) {
-          if (!(o.estado === "autorizada" || o.estado === "enviada")) continue; // solo compras comprometidas
-          const pid = o.proveedor_id || ocp.proveedor_id || "";
-          if (!pid) continue;
-          (compras[pid] = compras[pid] || []).push({
-            fecha: (o.fecha_autorizacion || c.creado || "").slice(0, 10),
-            total: parseFloat(o.total) || 0, moneda: o.moneda || "MXN", folio: c.folio, compra_id: c.id,
-          });
-        }
-      }
-      const out = provs.map(p => {
-        const evs = db.prepare("SELECT id, datos, creado FROM evaluaciones WHERE proveedor_id=? ORDER BY creado DESC").all(p.id);
-        const d = evs.length ? JSON.parse(evs[0].datos || "{}") : null;
-        return {
-          ...p,
-          num_evaluaciones: evs.length,
-          ultima_eval: d ? { id: evs[0].id, total: d.total, clasificacion: d.clasificacion, fecha: d.fecha || evs[0].creado.slice(0, 10), periodo: d.periodo } : null,
-          compras: compras[p.id] || [],
-        };
-      });
-      return json(res, 200, out);
-    }
-    // ---- Evaluación completa (FO-GDC-04) para ver / imprimir ----
-    const mEvalGet = ruta.match(/^\/api\/evaluacion\/([^/]+)$/);
-    if (mEvalGet && req.method === "GET") {
-      const e = db.prepare("SELECT * FROM evaluaciones WHERE id=?").get(mEvalGet[1]);
-      if (!e) return json(res, 404, { error: "Evaluación no encontrada" });
-      const p = db.prepare("SELECT * FROM proveedores WHERE id=?").get(e.proveedor_id) || { razon_social: "(proveedor eliminado)" };
-      return json(res, 200, {
-        evaluacion: { id: e.id, creado: e.creado, creado_por: e.creado_por, datos: JSON.parse(e.datos || "{}"), firmas: JSON.parse(e.firmas || "[]") },
-        proveedor: p,
-      });
     }
     if (ruta === "/api/proveedores" && req.method === "POST") {
       const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
@@ -944,7 +840,6 @@ const servidor = http.createServer(async (req, res) => {
 });
 
 servidor.listen(PUERTO, "0.0.0.0", () => {
-  if (FIN.url) { setTimeout(syncFin, 10000); setInterval(syncFin, 30 * 60 * 1000); console.log("   Enlace Finanzas dinmec-app: activo"); }
   const ips = ipsLocales();
   console.log("\n==================================================");
   console.log("   COMPRAS SGC DIGITAL  -  DINMEC SGC 2026");
