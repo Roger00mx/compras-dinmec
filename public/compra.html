@@ -271,8 +271,8 @@ function construirRequisicion(){
 
   cuerpo.innerHTML=`
     ${d.estado==="rechazada"?`<div class="sello rojo">❌ Rechazada${d.rechazada_por?(" por "+escaparHTML(d.rechazada_por)):""} · Motivo: ${escaparHTML(d.motivo_rechazo||"")}</div>`:""}
-    ${d.estado==="autorizada"?`<div class="sello">✅ Autorizada electrónicamente por ${escaparHTML(d.autorizada_por||"")} el ${fechaCorta(d.fecha_autorizacion)} · ${CAT.versiones.requisicion}</div>`:""}
-    ${d.estado==="solicitada"?`<div class="sello ambar">🕓 Enviada a autorización por ${escaparHTML(d.solicitada_por||"")} el ${fechaCorta(d.fecha_solicitud)} — en espera de Dirección general</div>`:""}
+    ${d.estado==="autorizada"?`<div class="sello">✅ Registrada y firmada por ${escaparHTML(d.autorizada_por||d.solicitada_por||"")} el ${fechaCorta(d.fecha_autorizacion||d.fecha_solicitud)} · ${CAT.versiones.requisicion}</div>`:""}
+    ${d.estado==="solicitada"?`<div class="sello">✅ Registrada por ${escaparHTML(d.solicitada_por||"")} el ${fechaCorta(d.fecha_solicitud)} — ya puede cotizarse (flujo ágil: sin autorización previa)</div>`:""}
     <div class="bloque"><div class="et">Datos de la requisición</div>
       <div class="campos">
         <div class="campo"><label>Fecha de solicitud</label><input value="${escaparHTML(d.fecha_solicitud?fechaCorta(d.fecha_solicitud):"(al enviar)")}" readonly></div>
@@ -290,7 +290,7 @@ function construirRequisicion(){
     ${adjuntosHTML("requisicion", d.estado==="autorizada")}
     <div class="bloque"><div class="et">Firmas (${CAT.versiones.requisicion})</div>
       ${firmaHTML("requisicion__sol", fSol, d.estado==="autorizada"||d.estado==="solicitada")}
-      ${d.estado==="solicitada"||d.estado==="autorizada"?firmaHTML("requisicion__aut", fAut, d.estado==="autorizada"):""}
+      ${fAut.firma?firmaHTML("requisicion__aut", fAut, true):""}
     </div>
     <div class="tarea-pie">
       ${corrigiendoReq?`<span class="candado" style="margin:0">✏️ Corrigiendo captura — el estado y las firmas no cambian</span>
@@ -298,11 +298,7 @@ function construirRequisicion(){
         <button class="btn verde" onclick="guardarCorreccionReq()">💾 Guardar corrección</button>`:""}
       ${bloqueado&&!corrigiendoReq&&(USUARIO.rol_app==="admin"||USUARIO.autoriza)?`<button class="btn fantasma" onclick="corrigiendoReq=true;construirRequisicion()">✏️ Corregir captura</button>`:""}
       ${editable&&!corrigiendoReq?`<button class="btn" onclick="guardarReq('')">💾 Guardar borrador</button>
-        <button class="btn primario" onclick="guardarReq('solicitada')">📨 Enviar a autorización</button>`:""}
-      ${d.estado==="solicitada"&&USUARIO.autoriza?`
-        <button class="btn peligro" onclick="rechazarReq()">✗ Rechazar</button>
-        <button class="btn verde" onclick="guardarReq('autorizada')">✓ Autorizar requisición</button>`:""}
-      ${d.estado==="solicitada"&&!USUARIO.autoriza?`<span class="candado">En espera de autorización de Dirección general</span>`:""}
+        <button class="btn verde" onclick="guardarReq('autorizada')">✅ Registrar requisición</button>`:""}
       ${d.estado==="rechazada"?`<button class="btn primario" onclick="guardarReq('')">✏️ Corregir y volver a capturar</button>`:""}
     </div>`;
   activarFirmas(cuerpo);
@@ -342,19 +338,17 @@ async function guardarReq(nuevoEstado){
   const fs=sec("requisicion").firmas;
   const fSol=leerFirma(cuerpo,"requisicion__sol", fs[0]||{rol:"Solicitante"});
   const fAut=leerFirma(cuerpo,"requisicion__aut", fs[1]||{rol:"Autorización (Dirección general)"});
-  if(nuevoEstado==="solicitada"){
+  if(nuevoEstado==="autorizada"){
     if(!d.fecha_requerida){ aviso("⚠️ Falta la fecha requerida de entrega"); return; }
     if(!d.partidas.length){ aviso("⚠️ Captura al menos una partida"); return; }
     if(d.partidas.some(p=>!p.cantidad||!p.descripcion)){ aviso("⚠️ Toda partida necesita cantidad y descripción (el PS-GDC-01 no admite requisiciones incompletas)"); return; }
     if(!fSol.firma){ aviso("⚠️ Falta la firma del solicitante"); return; }
-    d.estado="solicitada"; d.fecha_solicitud=new Date().toISOString(); d.solicitada_por=USUARIO.nombre;
+    d.estado="autorizada"; d.fecha_solicitud=d.fecha_solicitud||new Date().toISOString(); d.solicitada_por=d.solicitada_por||USUARIO.nombre;
+    d.autorizada_por=fSol.nombre||USUARIO.nombre; d.fecha_autorizacion=new Date().toISOString();
     delete d.motivo_rechazo; delete d.rechazada_por;
-  } else if(nuevoEstado==="autorizada"){
-    if(!fAut.firma){ aviso("⚠️ Falta la firma de autorización de Dirección general"); return; }
-    d.estado="autorizada"; d.autorizada_por=USUARIO.nombre; d.fecha_autorizacion=new Date().toISOString();
   } else if(nuevoEstado===""&&(d.estado==="rechazada"||!d.estado)){ d.estado=""; }
   await guardarSeccion("requisicion", d, [fSol,fAut],
-    nuevoEstado==="solicitada"?"Requisición enviada a autorización ✓":(nuevoEstado==="autorizada"?"Requisición autorizada ✓":"Guardado ✓"));
+    nuevoEstado==="autorizada"?"Requisición registrada ✓ — ya se puede cotizar":"Guardado ✓");
 }
 async function guardarCorreccionReq(){
   const d={...sec("requisicion").datos};
@@ -376,17 +370,17 @@ async function rechazarReq(){
 function construirSeleccion(){
   const cuerpo=document.getElementById("cuerpo-seleccion");
   const req=sec("requisicion").datos;
-  if(req.estado!=="autorizada"){ cuerpo.innerHTML=`<div class="candado">🔒 Se habilita cuando la requisición esté autorizada por Dirección general.</div>`; return; }
+  if(req.estado!=="autorizada"&&req.estado!=="solicitada"){ cuerpo.innerHTML=`<div class="candado">🔒 Se habilita cuando la requisición esté registrada y firmada por el solicitante.</div>`; return; }
   const d=sec("seleccion").datos, fs=sec("seleccion").firmas;
   const bloqueado=d.estado==="aprobada";
   const cots=(d.cotizaciones&&d.cotizaciones.length)?d.cotizaciones:[{},{},{}];
   const fEla=firmaParaPintar("seleccion","seleccion__ela", fs[0]||{rol:"Elaborado por (Responsable de compras)"});
-  const fApr=firmaParaPintar("seleccion","seleccion__apr", fs[1]||{rol:"Aprobado por (Director general)"});
+  const fApr=firmaParaPintar("seleccion","seleccion__apr", fs[1]||{rol:"Vo.Bo. (opcional)"});
 
   const haySeleccion=(d.cotizaciones||[]).some(c=>c.seleccionado||(c.productos||[]).some(pr=>pr.seleccionado));
   cuerpo.innerHTML=`
-    ${bloqueado?`<div class="sello">✅ Selección aprobada electrónicamente por ${escaparHTML(d.aprobada_por||"")} el ${fechaCorta(d.fecha_aprobacion)} · ${CAT.versiones.seleccion}</div>`:""}
-    ${!bloqueado&&haySeleccion?`<div class="sello ambar">⏳ Ya hay proveedor(es) seleccionado(s) — PENDIENTE DE APROBACIÓN por Dirección general${USUARIO.autoriza?": revisa y usa \"✓ Aprobar selección\"":""}</div>`:""}
+    ${bloqueado?`<div class="sello">✅ Selección confirmada electrónicamente por ${escaparHTML(d.aprobada_por||"")} el ${fechaCorta(d.fecha_aprobacion)} · ${CAT.versiones.seleccion}</div>`:""}
+    ${!bloqueado&&haySeleccion?`<div class="sello ambar">⏳ Ya hay proveedor(es) seleccionado(s) — usa "✓ Confirmar selección" para habilitar las órdenes de compra</div>`:""}
     <div class="bloque"><div class="et">Cotizaciones comparadas (mínimo 3, o justifica abajo) — puedes seleccionar VARIOS proveedores, uno por producto; se generará una OC por cada proveedor</div>
       <div id="s-cotizaciones">${cots.map((c,i)=>cotizacionHTML(c,i,!bloqueado)).join("")}</div>
       ${bloqueado?"":`<div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
@@ -404,9 +398,8 @@ function construirSeleccion(){
       ${firmaHTML("seleccion__apr", fApr, bloqueado)}
     </div>
     <div class="tarea-pie">
-      ${bloqueado?"":`<button class="btn" onclick="guardarSel(false)">💾 Guardar</button>`}
-      ${!bloqueado&&USUARIO.autoriza?`<button class="btn verde" onclick="guardarSel(true)">✓ Aprobar selección</button>`:""}
-      ${!bloqueado&&!USUARIO.autoriza?`<span class="candado">La aprobación final la da Dirección general</span>`:""}
+      ${bloqueado?"":`<button class="btn" onclick="guardarSel(false)">💾 Guardar</button>
+        <button class="btn verde" onclick="guardarSel(true)">✓ Confirmar selección</button>`}
     </div>`;
   activarFirmas(cuerpo);
   activarEventosSel();
@@ -587,19 +580,19 @@ async function guardarSel(aprobar){
   d.cotizaciones=leerCotizaciones(); d.justificacion=gv("s-justificacion"); d.version=CAT.versiones.seleccion;
   const fs=sec("seleccion").firmas;
   const fEla=leerFirma(cuerpo,"seleccion__ela", fs[0]||{rol:"Elaborado por (Responsable de compras)"});
-  const fApr=leerFirma(cuerpo,"seleccion__apr", fs[1]||{rol:"Aprobado por (Director general)"});
+  const fApr=leerFirma(cuerpo,"seleccion__apr", fs[1]||{rol:"Vo.Bo. (opcional)"});
   if(aprobar){
     const elegidas=d.cotizaciones.filter(c=>c.seleccionado);
     if(!d.cotizaciones.length){ aviso("⚠️ Captura al menos una cotización"); return; }
     if(!elegidas.length){ aviso("⚠️ Marca ✔ al menos un producto a comprar en alguna cotización"); return; }
     if(elegidas.some(c=>!c.proveedor_id)){ aviso("⚠️ Toda cotización seleccionada debe tener proveedor del catálogo"); return; }
     if(d.cotizaciones.length<3 && !d.justificacion){ aviso("⚠️ Con menos de 3 cotizaciones la justificación es obligatoria (FO-GDC-03)"); return; }
-    if(!fEla.firma||!fApr.firma){ aviso("⚠️ Se requieren ambas firmas (Elaboró y Aprobó)"); return; }
-    d.estado="aprobada"; d.aprobada_por=USUARIO.nombre; d.fecha_aprobacion=new Date().toISOString();
+    if(!fEla.firma){ aviso("⚠️ Falta la firma de quien elaboró la selección"); return; }
+    d.estado="aprobada"; d.aprobada_por=fEla.nombre||USUARIO.nombre; d.fecha_aprobacion=new Date().toISOString();
     d.proveedores=[...new Set(elegidas.map(c=>c.proveedor_id))];
     d.proveedor_id=d.proveedores[0];
   }
-  await guardarSeccion("seleccion", d, [fEla,fApr], aprobar?"Selección aprobada ✓":"Guardado ✓");
+  await guardarSeccion("seleccion", d, [fEla,fApr], aprobar?"Selección confirmada ✓ — genera las OC en la etapa 03":"Guardado ✓");
 }
 
 // ================= 03 · ÓRDENES DE COMPRA (FO-GDC-02) — una por proveedor =================
@@ -611,7 +604,7 @@ function ordenesDe(d){ // compatibilidad: expedientes viejos con una sola OC
 function construirOC(){
   const cuerpo=document.getElementById("cuerpo-oc");
   const selD=sec("seleccion").datos;
-  if(selD.estado!=="aprobada"){ cuerpo.innerHTML=`<div class="candado">🔒 Se habilita cuando la selección de proveedor esté aprobada.</div>`; return; }
+  if(selD.estado!=="aprobada"){ cuerpo.innerHTML=`<div class="candado">🔒 Se habilita cuando la selección de proveedor esté confirmada.</div>`; return; }
   const d=sec("oc").datos;
   const ordenes=ordenesDe(d);
   const provsSel=[...new Set((selD.cotizaciones||[]).filter(c=>c.seleccionado&&c.proveedor_id).map(c=>c.proveedor_id))];
