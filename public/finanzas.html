@@ -28,6 +28,46 @@
   .caja-card .cnom{font-weight:700;color:var(--gris);font-size:.78rem;text-transform:uppercase}
   .caja-card .csaldo{font-size:1.35rem;font-weight:800;color:var(--azul)}
   .caja-card .csaldo.neg{color:var(--rojo)}
+  /* ------- pestañas ------- */
+  .ftabs{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px}
+  .ftab{padding:9px 18px;border-radius:22px;border:1.5px solid var(--linea);background:#fff;cursor:pointer;font-weight:700;font-size:.86rem;color:var(--gris)}
+  .ftab.activo{background:var(--azul);border-color:var(--azul);color:#fff}
+  /* ------- panel ------- */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0}
+  .kpi{background:#fff;border:1px solid var(--linea);border-radius:12px;box-shadow:var(--sombra);padding:12px 14px;border-top:4px solid var(--azul)}
+  .kpi.v{border-top-color:var(--verde)} .kpi.r{border-top-color:var(--rojo)} .kpi.n{border-top-color:var(--naranja)}
+  .kpi .kt{font-size:.72rem;font-weight:700;color:var(--gris);text-transform:uppercase}
+  .kpi .kv{font-size:1.25rem;font-weight:800;color:var(--azul)}
+  .kpi .kv.neg{color:var(--rojo)} .kpi .kv.pos{color:var(--verde)}
+  .cuadro{background:#fff;border:1px solid var(--linea);border-radius:12px;box-shadow:var(--sombra);padding:14px 16px;margin-top:12px}
+  .cuadro h3{margin:0 0 10px;font-size:.95rem;color:var(--azul)}
+  .ptabla-f{width:100%;border-collapse:collapse;font-size:.84rem}
+  .ptabla-f th{background:var(--azul);color:#fff;padding:7px 8px;text-align:right;font-size:.74rem}
+  .ptabla-f th:first-child{text-align:left}
+  .ptabla-f td{padding:6px 8px;border-bottom:1px solid var(--linea);text-align:right;white-space:nowrap}
+  .ptabla-f td:first-child{text-align:left;font-weight:700;color:var(--azul-claro)}
+  .ptabla-f tr.tot td{background:var(--azul-bg);font-weight:800}
+  .pos{color:var(--verde);font-weight:700} .neg{color:var(--rojo);font-weight:700}
+  .grafica{display:flex;align-items:flex-end;gap:6px;height:150px;padding-top:6px;overflow-x:auto}
+  .gmes{flex:1;min-width:34px;display:flex;flex-direction:column;align-items:center;gap:3px;height:100%;justify-content:flex-end}
+  .gbars{display:flex;gap:2px;align-items:flex-end;height:120px}
+  .gbar{width:12px;border-radius:3px 3px 0 0;min-height:2px}
+  .gbar.i{background:var(--verde)} .gbar.g{background:var(--rojo)}
+  .gl{font-size:.66rem;color:var(--gris);font-weight:700}
+  .gdia .gbar{width:9px}
+  .dona-cont{display:flex;gap:18px;flex-wrap:wrap;align-items:center}
+  .dona{width:150px;height:150px;border-radius:50%;position:relative;flex-shrink:0}
+  .dona::after{content:attr(data-c);position:absolute;inset:32px;background:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.8rem;color:var(--azul);text-align:center}
+  .leyenda{flex:1;min-width:200px}
+  .leyenda .li{display:flex;align-items:center;gap:8px;font-size:.82rem;padding:3px 0}
+  .leyenda .pt{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+  .leyenda .lv{margin-left:auto;font-weight:700;white-space:nowrap}
+  .topbar{display:flex;align-items:center;gap:8px;font-size:.84rem;padding:4px 0}
+  .topbar .tb{height:12px;border-radius:6px;background:var(--naranja);min-width:4px}
+  .analisis li{margin:6px 0;font-size:.88rem}
+  .selmes{border:1.5px solid var(--linea);border-radius:20px;padding:7px 14px;font-family:inherit;font-weight:700}
+  .catlista .ci{display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--linea);font-size:.88rem}
+  .mimp .mcat{display:block;font-size:.66rem;color:var(--gris);font-weight:400}
 </style>
 </head>
 <body>
@@ -40,7 +80,7 @@
 
 <div class="contenedor">
   <div class="seccion-tit">
-    <h2>💰 Control de cajas y gastos</h2>
+    <h2>💰 Finanzas DINMEC</h2>
     <div class="crece"></div>
     <button class="btn fantasma chico" id="btnCaja" style="display:none" onclick="nuevaCaja()">+ Caja</button>
     <button class="btn primario" onclick="nuevoMovimiento()">+ Movimiento</button>
@@ -48,20 +88,59 @@
 
   <div id="cajas" style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0"></div>
 
-  <div class="filtros">
-    <input class="buscar" id="buscar" placeholder="🔎 Buscar concepto o usuario…" oninput="pintar()">
-    <select id="fCaja" onchange="cargarMovs()" style="border:1.5px solid var(--linea);border-radius:20px;padding:8px 14px;font-family:inherit"><option value="">Todas las cajas</option></select>
-    <div class="filtro activo" data-f="todos" onclick="filtrar(this)">Todos</div>
-    <div class="filtro" data-f="INGRESO" onclick="filtrar(this)">Ingresos</div>
-    <div class="filtro" data-f="GASTO" onclick="filtrar(this)">Gastos</div>
+  <div class="ftabs">
+    <div class="ftab activo" data-t="movs" onclick="tab(this)">📒 Movimientos</div>
+    <div class="ftab" data-t="panel" onclick="tab(this)">📊 Panel</div>
+    <div class="ftab" data-t="metas" onclick="tab(this)">🎯 Metas</div>
+    <div class="ftab" data-t="cats" onclick="tab(this)">🏷️ Categorías</div>
   </div>
 
-  <div id="lista" style="background:#fff;border:1px solid var(--linea);border-radius:12px;box-shadow:var(--sombra);overflow:hidden;margin-top:12px"></div>
+  <!-- ============ MOVIMIENTOS ============ -->
+  <div id="t-movs">
+    <div class="filtros">
+      <input class="buscar" id="buscar" placeholder="🔎 Buscar concepto, categoría o usuario…" oninput="pintar()">
+      <select id="fCaja" onchange="cargarMovs()" style="border:1.5px solid var(--linea);border-radius:20px;padding:8px 14px;font-family:inherit"><option value="">Todas las cajas</option></select>
+      <div class="filtro activo" data-f="todos" onclick="filtrar(this)">Todos</div>
+      <div class="filtro" data-f="INGRESO" onclick="filtrar(this)">Ingresos</div>
+      <div class="filtro" data-f="GASTO" onclick="filtrar(this)">Gastos</div>
+    </div>
+    <div id="lista" style="background:#fff;border:1px solid var(--linea);border-radius:12px;box-shadow:var(--sombra);overflow:hidden;margin-top:12px"></div>
+  </div>
+
+  <!-- ============ PANEL ============ -->
+  <div id="t-panel" style="display:none">
+    <div class="filtros" style="margin-top:4px">
+      <select id="pAnio" class="selmes" onchange="cargarPanel()"></select>
+      <select id="pCaja" class="selmes" onchange="cargarPanel()"><option value="">Todas las cajas</option></select>
+    </div>
+    <div id="panel"></div>
+  </div>
+
+  <!-- ============ METAS ============ -->
+  <div id="t-metas" style="display:none">
+    <div class="cuadro">
+      <h3>🎯 Metas mensuales vs realizado — <span id="metasAnio"></span></h3>
+      <p style="color:#5b6470;font-size:.84rem;margin-top:0">Fija tu presupuesto de ingresos y gastos por mes; la app lo compara contra lo realmente registrado.</p>
+      <div class="ptabla-scroll"><table class="ptabla-f" id="tblMetas"></table></div>
+      <div id="metasBtns" style="display:flex;justify-content:flex-end;margin-top:10px"></div>
+    </div>
+  </div>
+
+  <!-- ============ CATEGORÍAS ============ -->
+  <div id="t-cats" style="display:none">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:4px">
+      <div class="cuadro"><h3 style="color:var(--verde)">🏷️ Categorías de INGRESOS</h3><div class="catlista" id="catsIng"></div><div id="catAddIng" style="margin-top:8px"></div></div>
+      <div class="cuadro"><h3 style="color:var(--rojo)">🏷️ Categorías de GASTOS</h3><div class="catlista" id="catsGas"></div><div id="catAddGas" style="margin-top:8px"></div></div>
+    </div>
+  </div>
 </div>
 
 <script src="comun.js"></script>
 <script>
-let USUARIO, CAJAS=[], MOVS=[], FILTRO="todos";
+let USUARIO, CAJAS=[], MOVS=[], CATS=[], FILTRO="todos", RES=null;
+const MESN=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+const MESL=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const PALETA=["#1d3050","#ef7d17","#2e9e5b","#c0392b","#7d6608","#5b6470","#8e44ad","#16a085","#d4ac0d","#884ea0","#2471a3","#a04000"];
 
 async function inicio(){
   USUARIO=await exigirSesion(); if(!USUARIO) return;
@@ -72,7 +151,16 @@ async function inicio(){
   }
   if(USUARIO.rol_app==="admin") document.getElementById("btnCaja").style.display="";
   await cargarCajas();
+  await cargarCats();
   await cargarMovs();
+}
+
+function tab(el){
+  document.querySelectorAll(".ftab").forEach(t=>t.classList.remove("activo"));
+  el.classList.add("activo");
+  ["movs","panel","metas","cats"].forEach(t=>document.getElementById("t-"+t).style.display=(t===el.dataset.t?"":"none"));
+  if(el.dataset.t==="panel"||el.dataset.t==="metas") cargarPanel();
+  if(el.dataset.t==="cats") pintarCats();
 }
 
 async function cargarCajas(){
@@ -83,11 +171,15 @@ async function cargarCajas(){
       <div class="cnom">${escaparHTML(c.nombre)}</div>
       <div class="csaldo ${c.saldo<0?"neg":""}">${dinero(c.saldo)}</div>
     </div>`).join("")||`<div class="vacio" style="flex:1">Aún no hay cajas. ${USUARIO.rol_app==="admin"?"Crea la primera con el botón + Caja.":""}</div>`;
-  const sel=document.getElementById("fCaja");
-  const val=sel.value;
-  sel.innerHTML=`<option value="">Todas las cajas</option>`+CAJAS.map(c=>`<option value="${c.id}" ${c.id===val?"selected":""}>${escaparHTML(c.nombre)}</option>`).join("");
+  ["fCaja","pCaja"].forEach(idSel=>{
+    const sel=document.getElementById(idSel); const val=sel.value;
+    sel.innerHTML=`<option value="">Todas las cajas</option>`+CAJAS.map(c=>`<option value="${c.id}" ${c.id===val?"selected":""}>${escaparHTML(c.nombre)}</option>`).join("");
+  });
 }
-
+async function cargarCats(){
+  CATS=await api.get("/api/fin/categorias");
+  if(CATS.error) CATS=[];
+}
 async function cargarMovs(){
   const caja=document.getElementById("fCaja").value;
   MOVS=await api.get("/api/fin/movimientos"+(caja?("?caja="+caja):""));
@@ -96,20 +188,20 @@ async function cargarMovs(){
 }
 
 function filtrar(el){
-  document.querySelectorAll(".filtro").forEach(f=>f.classList.remove("activo"));
+  document.querySelectorAll("#t-movs .filtro").forEach(f=>f.classList.remove("activo"));
   el.classList.add("activo"); FILTRO=el.dataset.f; pintar();
 }
 function nombreCaja(id){ const c=CAJAS.find(x=>x.id===id); return c?c.nombre:"—"; }
 
 function pintar(){
   const q=(document.getElementById("buscar").value||"").toLowerCase();
-  const fil=MOVS.filter(m=>(FILTRO==="todos"||m.tipo===FILTRO) && (!q||(m.concepto||"").toLowerCase().includes(q)||(m.usuario||"").toLowerCase().includes(q)));
+  const fil=MOVS.filter(m=>(FILTRO==="todos"||m.tipo===FILTRO) && (!q||(m.concepto||"").toLowerCase().includes(q)||(m.usuario||"").toLowerCase().includes(q)||(m.categoria||"").toLowerCase().includes(q)));
   document.getElementById("lista").innerHTML=fil.length?fil.map(m=>`
     <div class="mov ${m.tipo==="INGRESO"?"ing":"gas"}">
       <div class="mfecha">${new Date(m.fecha).toLocaleString("es-MX",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"})}</div>
       <div class="mtipo">${m.tipo}</div>
       <div class="mcon">${escaparHTML(m.concepto||"(sin concepto)")}
-        <div class="msub">${escaparHTML(nombreCaja(m.caja_id))} · ${escaparHTML(m.usuario||"")}</div>
+        <div class="msub">${escaparHTML(nombreCaja(m.caja_id))} · ${escaparHTML(m.usuario||"")}${m.categoria?` · 🏷️ ${escaparHTML(m.categoria)}`:""}</div>
       </div>
       ${m.archivo?`<img class="mini" src="/finimg/${m.archivo}" onclick="verImg('/finimg/${m.archivo}')" onerror="this.outerHTML='<a href=\\'/finimg/${m.archivo}\\' target=\\'_blank\\'>📎</a>'">`:""}
       <div class="mimp">${m.tipo==="INGRESO"?"+":"−"}${dinero(m.importe)}</div>
@@ -119,6 +211,169 @@ function pintar(){
     </div>`).join(""):`<div class="vacio" style="border:none">Sin movimientos${q?" con esa búsqueda":""}.</div>`;
 }
 
+/* ==================== PANEL (dashboard estilo Flujo de Caja) ==================== */
+let MES_DIA=new Date().getMonth()+1;
+async function cargarPanel(){
+  const selA=document.getElementById("pAnio");
+  const anio=parseInt(selA.value)||new Date().getFullYear();
+  const caja=document.getElementById("pCaja").value;
+  RES=await api.get("/api/fin/resumen?anio="+anio+(caja?("&caja="+caja):""));
+  if(RES.error){ aviso("⚠️ "+RES.error); return; }
+  // selector de años disponibles
+  const anios=[...new Set([...(RES.anios||[]),new Date().getFullYear()])].sort();
+  selA.innerHTML=anios.map(a=>`<option value="${a}" ${a===RES.anio?"selected":""}>${a}</option>`).join("");
+  pintarPanel(); pintarMetas();
+}
+function num(v){ return (v||0); }
+function pct(v){ return (v*100).toFixed(1).replace(/\.0$/,"")+"%"; }
+
+function pintarPanel(){
+  const R=RES, cont=document.getElementById("panel");
+  const totI=R.meses.reduce((s,m)=>s+m.ingresos,0), totG=R.meses.reduce((s,m)=>s+m.gastos,0);
+  const resultado=totI-totG, saldoFinal=R.saldo_inicial+resultado;
+  const rent=totI>0?resultado/totI:0;
+  // tabla mensual con acumulado
+  let acum=R.saldo_inicial;
+  const filas=R.meses.map((m,i)=>{
+    const r=m.ingresos-m.gastos; const si=acum; acum+=r;
+    return {mes:MESL[i], si, ...m, r, acum, rent:m.ingresos>0?r/m.ingresos:0};
+  });
+  const activos=filas.filter(f=>f.ingresos||f.gastos);
+  const mejor=activos.length?activos.reduce((a,b)=>b.r>a.r?b:a):null;
+  const peor=activos.length?activos.reduce((a,b)=>b.r<a.r?b:a):null;
+  const maxBar=Math.max(1,...R.meses.map(m=>Math.max(m.ingresos,m.gastos)));
+  // día a día del mes elegido
+  const diasMes={}; Object.entries(R.dias||{}).forEach(([k,v])=>{ const [mm,dd]=k.split("-").map(Number); if(mm===MES_DIA) diasMes[dd]=v; });
+  const nDias=new Date(R.anio,MES_DIA,0).getDate();
+  const maxDia=Math.max(1,...Object.values(diasMes).map(v=>Math.max(v.ingresos,v.gastos)));
+
+  cont.innerHTML=`
+    <div class="kpis">
+      <div class="kpi"><div class="kt">Saldo inicial ${R.anio}</div><div class="kv ${R.saldo_inicial<0?"neg":""}">${dinero(R.saldo_inicial)}</div></div>
+      <div class="kpi v"><div class="kt">Ingresos ${R.anio}</div><div class="kv pos">${dinero(totI)}</div></div>
+      <div class="kpi r"><div class="kt">Gastos ${R.anio}</div><div class="kv neg">${dinero(totG)}</div></div>
+      <div class="kpi n"><div class="kt">Ganancia / Pérdida</div><div class="kv ${resultado<0?"neg":"pos"}">${dinero(resultado)}</div></div>
+      <div class="kpi"><div class="kt">Rentabilidad</div><div class="kv ${rent<0?"neg":"pos"}">${pct(rent)}</div></div>
+      <div class="kpi"><div class="kt">Saldo final</div><div class="kv ${saldoFinal<0?"neg":""}">${dinero(saldoFinal)}</div></div>
+    </div>
+
+    <div class="cuadro"><h3>📈 Ingresos vs Gastos por mes</h3>
+      <div class="grafica">${R.meses.map((m,i)=>`
+        <div class="gmes" title="${MESL[i]}: +${dinero(m.ingresos)} / −${dinero(m.gastos)}">
+          <div class="gbars"><div class="gbar i" style="height:${Math.round(m.ingresos/maxBar*120)}px"></div><div class="gbar g" style="height:${Math.round(m.gastos/maxBar*120)}px"></div></div>
+          <div class="gl">${MESN[i]}</div>
+        </div>`).join("")}
+      </div>
+      <div style="font-size:.76rem;color:var(--gris);margin-top:4px"><span style="color:var(--verde);font-weight:800">■</span> Ingresos &nbsp; <span style="color:var(--rojo);font-weight:800">■</span> Gastos</div>
+    </div>
+
+    <div class="cuadro"><h3>📋 Flujo de caja ${R.anio}</h3>
+      <div class="ptabla-scroll"><table class="ptabla-f">
+        <tr><th>Mes</th><th>Saldo inicial</th><th>Ingresos</th><th>Gastos</th><th>Resultado</th><th>Acumulado</th><th>Rentab.</th></tr>
+        ${filas.map(f=>`<tr><td>${f.mes}</td><td>${dinero(f.si)}</td><td class="pos">${dinero(f.ingresos)}</td><td class="neg">${dinero(f.gastos)}</td><td class="${f.r<0?"neg":"pos"}">${dinero(f.r)}</td><td>${dinero(f.acum)}</td><td>${f.ingresos?pct(f.rent):"—"}</td></tr>`).join("")}
+        <tr class="tot"><td>TOTAL</td><td>${dinero(R.saldo_inicial)}</td><td class="pos">${dinero(totI)}</td><td class="neg">${dinero(totG)}</td><td class="${resultado<0?"neg":"pos"}">${dinero(resultado)}</td><td>${dinero(saldoFinal)}</td><td>${totI?pct(rent):"—"}</td></tr>
+      </table></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:12px">
+      ${dona("División de GASTOS por categoría", R.categorias.GASTO, totG)}
+      ${dona("División de INGRESOS por categoría", R.categorias.INGRESO, totI)}
+    </div>
+
+    <div class="cuadro"><h3>🏆 Top 5 categorías de gasto</h3>${top5(R.categorias.GASTO)}</div>
+
+    <div class="cuadro"><h3>📅 Flujo diario — <select class="selmes" onchange="MES_DIA=parseInt(this.value);pintarPanel()">${MESL.map((m,i)=>`<option value="${i+1}" ${i+1===MES_DIA?"selected":""}>${m}</option>`).join("")}</select></h3>
+      <div class="grafica gdia">${Array.from({length:nDias},(_,ix)=>{const d=ix+1,v=diasMes[d]||{ingresos:0,gastos:0};const r=v.ingresos-v.gastos;
+        return `<div class="gmes" title="Día ${d}: +${dinero(v.ingresos)} / −${dinero(v.gastos)} = ${dinero(r)}">
+          <div class="gbars"><div class="gbar i" style="height:${Math.round(v.ingresos/maxDia*120)}px"></div><div class="gbar g" style="height:${Math.round(v.gastos/maxDia*120)}px"></div></div>
+          <div class="gl">${d}</div></div>`;}).join("")}
+      </div>
+      ${(()=>{const ti=Object.values(diasMes).reduce((s,v)=>s+v.ingresos,0),tg=Object.values(diasMes).reduce((s,v)=>s+v.gastos,0);
+        return `<div style="font-size:.84rem;margin-top:6px">Total ${MESL[MES_DIA-1]}: <span class="pos">+${dinero(ti)}</span> · <span class="neg">−${dinero(tg)}</span> · Resultado <b class="${ti-tg<0?"neg":"pos"}">${dinero(ti-tg)}</b></div>`;})()}
+    </div>
+
+    <div class="cuadro"><h3>🔎 Análisis automático</h3><ul class="analisis">
+      ${mejor?`<li>El mejor mes fue <b>${mejor.mes}</b> con resultado de <b class="${mejor.r<0?"neg":"pos"}">${dinero(mejor.r)}</b>.</li>`:"<li>Aún no hay movimientos en este año.</li>"}
+      ${peor&&activos.length>1?`<li>El mes más difícil fue <b>${peor.mes}</b> con <b class="${peor.r<0?"neg":"pos"}">${dinero(peor.r)}</b>.</li>`:""}
+      ${activos.length?`<li>Promedio mensual: ingresos <b class="pos">${dinero(totI/activos.length)}</b> · gastos <b class="neg">${dinero(totG/activos.length)}</b>.</li>`:""}
+      ${totG>0?`<li>Por cada $1 de gasto se generaron <b>${(totI/totG).toFixed(2)}</b> de ingreso.</li>`:""}
+    </ul></div>`;
+}
+function dona(titulo, data, total){
+  const ent=Object.entries(data||{}).sort((a,b)=>b[1]-a[1]);
+  if(!ent.length||!total) return `<div class="cuadro"><h3>${titulo}</h3><div class="vacio" style="border:none">Sin datos. Asigna categorías a los movimientos.</div></div>`;
+  const top=ent.slice(0,7); const resto=ent.slice(7).reduce((s,e)=>s+e[1],0);
+  if(resto) top.push(["Otras",resto]);
+  let acc=0; const segs=top.map(([n,v],i)=>{const a=acc/total*360;acc+=v;const b=acc/total*360;return `${PALETA[i%PALETA.length]} ${a.toFixed(1)}deg ${b.toFixed(1)}deg`;});
+  return `<div class="cuadro"><h3>${titulo}</h3><div class="dona-cont">
+    <div class="dona" data-c="${dinero(total)}" style="background:conic-gradient(${segs.join(",")})"></div>
+    <div class="leyenda">${top.map(([n,v],i)=>`<div class="li"><span class="pt" style="background:${PALETA[i%PALETA.length]}"></span>${escaparHTML(n)}<span class="lv">${dinero(v)} · ${pct(v/total)}</span></div>`).join("")}</div>
+  </div></div>`;
+}
+function top5(data){
+  const ent=Object.entries(data||{}).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  if(!ent.length) return `<div class="vacio" style="border:none">Sin gastos con categoría este año.</div>`;
+  const max=ent[0][1]||1;
+  return ent.map(([n,v],i)=>`<div class="topbar"><b style="min-width:18px;color:var(--naranja)">${i+1}</b> <span style="flex:1">${escaparHTML(n)}</span><div class="tb" style="width:${Math.round(v/max*160)}px"></div><b>${dinero(v)}</b></div>`).join("");
+}
+
+/* ==================== METAS ==================== */
+function pintarMetas(){
+  if(!RES) return;
+  const R=RES, admin=USUARIO.rol_app==="admin";
+  document.getElementById("metasAnio").textContent=R.anio;
+  const mapa={}; (R.metas||[]).forEach(m=>mapa[m.mes]=m);
+  document.getElementById("tblMetas").innerHTML=`
+    <tr><th>Mes</th><th>Meta ingresos</th><th>Ingreso real</th><th>%</th><th>Meta gastos</th><th>Gasto real</th><th>%</th><th>Resultado real</th></tr>
+    ${MESL.map((nom,i)=>{
+      const mt=mapa[i+1]||{ingresos:0,gastos:0}; const re=R.meses[i]; const r=re.ingresos-re.gastos;
+      const pi=mt.ingresos>0?re.ingresos/mt.ingresos:null, pg=mt.gastos>0?re.gastos/mt.gastos:null;
+      return `<tr><td>${nom}</td>
+        <td>${admin?`<input data-meta-i="${i+1}" type="number" step="any" value="${mt.ingresos||""}" style="width:95px;border:1.5px solid var(--linea);border-radius:7px;padding:4px 6px;text-align:right">`:dinero(mt.ingresos)}</td>
+        <td class="pos">${dinero(re.ingresos)}</td>
+        <td>${pi===null?"—":`<span class="${pi>=1?"pos":"neg"}">${pct(pi)}</span>`}</td>
+        <td>${admin?`<input data-meta-g="${i+1}" type="number" step="any" value="${mt.gastos||""}" style="width:95px;border:1.5px solid var(--linea);border-radius:7px;padding:4px 6px;text-align:right">`:dinero(mt.gastos)}</td>
+        <td class="neg">${dinero(re.gastos)}</td>
+        <td>${pg===null?"—":`<span class="${pg<=1?"pos":"neg"}">${pct(pg)}</span>`}</td>
+        <td class="${r<0?"neg":"pos"}">${dinero(r)}</td></tr>`;
+    }).join("")}`;
+  document.getElementById("metasBtns").innerHTML=admin?`<button class="btn verde" onclick="guardarMetas()">💾 Guardar metas de ${R.anio}</button>`:"";
+}
+async function guardarMetas(){
+  for(let m=1;m<=12;m++){
+    const vi=document.querySelector(`[data-meta-i="${m}"]`).value, vg=document.querySelector(`[data-meta-g="${m}"]`).value;
+    const r=await api.put("/api/fin/metas",{anio:RES.anio,mes:m,ingresos:parseFloat(vi)||0,gastos:parseFloat(vg)||0});
+    if(r.error){ aviso("⚠️ "+r.error); return; }
+  }
+  aviso("Metas guardadas ✓"); cargarPanel();
+}
+
+/* ==================== CATEGORÍAS ==================== */
+function pintarCats(){
+  const admin=USUARIO.rol_app==="admin";
+  const pinta=(tipo,contId,addId)=>{
+    const lista=CATS.filter(c=>c.tipo===tipo);
+    document.getElementById(contId).innerHTML=lista.length?lista.map(c=>`
+      <div class="ci"><span style="flex:1">${escaparHTML(c.nombre)}</span>${admin?`<button class="fr-borrar" title="Quitar" onclick="borrarCat('${c.id}')">🗑</button>`:""}</div>`).join(""):`<div class="vacio" style="border:none">Sin categorías.</div>`;
+    document.getElementById(addId).innerHTML=admin?`<button class="btn fantasma chico" onclick="nuevaCat('${tipo}')">+ Agregar categoría</button>`:"";
+  };
+  pinta("INGRESO","catsIng","catAddIng");
+  pinta("GASTO","catsGas","catAddGas");
+}
+async function nuevaCat(tipo){
+  const nombre=prompt("Nombre de la nueva categoría de "+(tipo==="INGRESO"?"ingresos":"gastos")+":");
+  if(nombre===null||!nombre.trim()) return;
+  const r=await api.post("/api/fin/categorias",{tipo,nombre:nombre.trim()});
+  if(r.error){ aviso("⚠️ "+r.error); return; }
+  aviso("Categoría agregada ✓"); await cargarCats(); pintarCats();
+}
+async function borrarCat(id){
+  if(!confirm("¿Quitar esta categoría? Los movimientos que la usan conservan su etiqueta.")) return;
+  await api.del("/api/fin/categoria/"+id);
+  await cargarCats(); pintarCats();
+}
+
+/* ==================== cajas / movimientos ==================== */
 function nuevaCaja(){
   const nombre=prompt("Nombre de la nueva caja (ej. DINMEC SOLUTIONS):");
   if(nombre===null||!nombre.trim()) return;
@@ -139,13 +394,19 @@ function editarMov(id){
   const m=MOVS.find(x=>x.id===id);
   if(m) nuevoMovimiento(m);
 }
+function opcionesCat(tipo, actual){
+  const lista=CATS.filter(c=>c.tipo===tipo);
+  return `<option value="">(sin categoría)</option>`+lista.map(c=>`<option value="${escaparHTML(c.nombre)}" ${c.nombre===actual?"selected":""}>${escaparHTML(c.nombre)}</option>`).join("");
+}
 function nuevoMovimiento(mEdit){
   if(!CAJAS.length){ aviso("⚠️ Primero crea una caja"); return; }
   const fondo=document.createElement("div"); fondo.className="modal-fondo";
+  const tipoIni=mEdit?mEdit.tipo:"GASTO";
   fondo.innerHTML=`<div class="modal"><h2>${mEdit?"✏️ Editar movimiento":"Nuevo movimiento"}</h2>
     <div class="campos" style="grid-template-columns:1fr 1fr">
-      <div class="campo"><label>Tipo</label><select id="m-tipo"><option value="GASTO" ${mEdit&&mEdit.tipo==="GASTO"?"selected":""}>GASTO</option><option value="INGRESO" ${mEdit&&mEdit.tipo==="INGRESO"?"selected":""}>INGRESO</option></select></div>
+      <div class="campo"><label>Tipo</label><select id="m-tipo"><option value="GASTO" ${tipoIni==="GASTO"?"selected":""}>GASTO</option><option value="INGRESO" ${tipoIni==="INGRESO"?"selected":""}>INGRESO</option></select></div>
       <div class="campo"><label>Caja</label><select id="m-caja">${CAJAS.map(c=>`<option value="${c.id}" ${mEdit&&mEdit.caja_id===c.id?"selected":""}>${escaparHTML(c.nombre)}</option>`).join("")}</select></div>
+      <div class="campo" style="grid-column:1/-1"><label>Categoría</label><select id="m-cat">${opcionesCat(tipoIni, mEdit?mEdit.categoria:"")}</select></div>
       <div class="campo" style="grid-column:1/-1"><label>Concepto</label><input id="m-concepto" placeholder="Ej. Vulcanizado de llanta" value="${mEdit?escaparHTML(mEdit.concepto||""):""}"></div>
       <div class="campo"><label>Importe</label><input id="m-importe" type="number" step="any" min="0" value="${mEdit?mEdit.importe:""}"></div>
       <div class="campo"><label>Fecha del movimiento (editable)</label><input id="m-fecha" type="datetime-local"></div>
@@ -160,6 +421,7 @@ function nuevoMovimiento(mEdit){
     <div class="acciones"><button class="btn fantasma" id="m-cancel">Cancelar</button><button class="btn verde" id="m-ok">💾 ${mEdit?"Guardar cambios":"Guardar"}</button></div>
   </div>`;
   document.body.appendChild(fondo);
+  fondo.querySelector("#m-tipo").onchange=ev=>{ fondo.querySelector("#m-cat").innerHTML=opcionesCat(ev.target.value,""); };
   const fBase=mEdit?new Date(mEdit.fecha):new Date();
   fondo.querySelector("#m-fecha").value=new Date(fBase.getTime()-fBase.getTimezoneOffset()*60000).toISOString().slice(0,16);
   let archivoSel=null;
@@ -176,6 +438,7 @@ function nuevoMovimiento(mEdit){
     const cuerpoMov={
       tipo:fondo.querySelector("#m-tipo").value,
       caja_id:fondo.querySelector("#m-caja").value,
+      categoria:fondo.querySelector("#m-cat").value,
       concepto:fondo.querySelector("#m-concepto").value.trim(),
       importe,
       fecha:fechaV?new Date(fechaV).toISOString():undefined};
