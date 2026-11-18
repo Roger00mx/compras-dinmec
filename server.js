@@ -80,6 +80,20 @@ db.exec(`
   const colsU = db.prepare("PRAGMA table_info(usuarios)").all().map((c) => c.name);
   if (!colsU.includes("finanzas")) db.exec("ALTER TABLE usuarios ADD COLUMN finanzas INTEGER DEFAULT 0");
 }
+// Migración Finanzas: categoría por movimiento + catálogo inicial DINMEC
+function migrarFinanzas() {
+  const colsM = db.prepare("PRAGMA table_info(movimientos)").all().map((c) => c.name);
+  if (colsM.length && !colsM.includes("categoria")) db.exec("ALTER TABLE movimientos ADD COLUMN categoria TEXT DEFAULT ''");
+  const n = db.prepare("SELECT COUNT(*) n FROM fin_categorias").get().n;
+  if (!n) {
+    const semilla = {
+      INGRESO: ["Fixtures / dispositivos", "Maquinados", "Servicios / mantenimiento", "Venta de materiales", "Anticipos de clientes", "Otros ingresos"],
+      GASTO: ["Nómina y RH", "Materiales e insumos", "Maquinaria y herramienta", "Fletes y logística", "Servicios (luz, agua, internet)", "Renta", "Mantenimiento", "Combustible y viáticos", "Marketing y ventas", "Impuestos y comisiones", "Otros gastos"]
+    };
+    const ins = db.prepare("INSERT INTO fin_categorias (id,tipo,nombre,creado) VALUES (?,?,?,?)");
+    for (const [t, lista] of Object.entries(semilla)) for (const nom of lista) ins.run(uid(), t, nom, ahora());
+  }
+}
 // Módulo FINANZAS (control de cajas y gastos)
 db.exec(`
   CREATE TABLE IF NOT EXISTS cajas (
@@ -89,6 +103,13 @@ db.exec(`
     id TEXT PRIMARY KEY,
     caja_id TEXT, tipo TEXT, concepto TEXT, importe REAL,
     archivo TEXT, fecha TEXT, usuario TEXT
+  );
+  CREATE TABLE IF NOT EXISTS fin_categorias (
+    id TEXT PRIMARY KEY, tipo TEXT, nombre TEXT, creado TEXT
+  );
+  CREATE TABLE IF NOT EXISTS fin_metas (
+    anio INTEGER, mes INTEGER, ingresos REAL DEFAULT 0, gastos REAL DEFAULT 0,
+    PRIMARY KEY (anio, mes)
   );
   CREATE TABLE IF NOT EXISTS whatsapp_destinos (
     id TEXT PRIMARY KEY,
@@ -156,6 +177,7 @@ function notificarWhats(evento, texto) {
 // ---------- Utilidades ----------
 const ahora = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
+migrarFinanzas();
 const json = (res, code, obj) => {
   res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(obj));
@@ -780,9 +802,72 @@ const servidor = http.createServer(async (req, res) => {
       const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
       if (!b.caja_id || !b.tipo || !(parseFloat(b.importe) > 0)) return json(res, 400, { error: "Caja, tipo e importe (mayor a 0) son obligatorios" });
       const id = uid();
-      db.prepare("INSERT INTO movimientos (id,caja_id,tipo,concepto,importe,archivo,fecha,usuario) VALUES (?,?,?,?,?,?,?,?)")
-        .run(id, b.caja_id, b.tipo === "INGRESO" ? "INGRESO" : "GASTO", b.concepto || "", parseFloat(b.importe), "", b.fecha || ahora(), yo.nombre);
+      db.prepare("INSERT INTO movimientos (id,caja_id,tipo,concepto,importe,archivo,fecha,usuario,categoria) VALUES (?,?,?,?,?,?,?,?,?)")
+        .run(id, b.caja_id, b.tipo === "INGRESO" ? "INGRESO" : "GASTO", b.concepto || "", parseFloat(b.importe), "", b.fecha || ahora(), yo.nombre, b.categoria || "");
       return json(res, 200, { id });
+    }
+    // ---- Categorías de ingresos/gastos (catálogo editable) ----
+    if (ruta === "/api/fin/categorias" && req.method === "GET") {
+      return json(res, 200, db.prepare("SELECT * FROM fin_categorias ORDER BY tipo, nombre").all());
+    }
+    if (ruta === "/api/fin/categorias" && req.method === "POST") {
+      if (yo.rol_app !== "admin") return json(res, 403, { error: "Solo administrador puede editar categorías" });
+      const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
+      if (!b.nombre || !b.nombre.trim() || !["INGRESO", "GASTO"].includes(b.tipo)) return json(res, 400, { error: "Tipo (INGRESO/GASTO) y nombre son obligatorios" });
+      const id = uid();
+      db.prepare("INSERT INTO fin_categorias (id,tipo,nombre,creado) VALUES (?,?,?,?)").run(id, b.tipo, b.nombre.trim(), ahora());
+      return json(res, 200, { id });
+    }
+    const mCatDel = ruta.match(/^\/api\/fin\/categoria\/([^/]+)$/);
+    if (mCatDel && req.method === "DELETE") {
+      if (yo.rol_app !== "admin") return json(res, 403, { error: "Solo administrador puede editar categorías" });
+      db.prepare("DELETE FROM fin_categorias WHERE id=?").run(mCatDel[1]);
+      return json(res, 200, { ok: true });
+    }
+    // ---- Metas mensuales (presupuesto de ingresos y gastos) ----
+    if (ruta === "/api/fin/metas" && req.method === "GET") {
+      const anio = parseInt(url.searchParams.get("anio")) || new Date().getFullYear();
+      return json(res, 200, db.prepare("SELECT * FROM fin_metas WHERE anio=? ORDER BY mes").all(anio));
+    }
+    if (ruta === "/api/fin/metas" && req.method === "PUT") {
+      if (yo.rol_app !== "admin") return json(res, 403, { error: "Solo administrador puede fijar metas" });
+      const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
+      const anio = parseInt(b.anio), mes = parseInt(b.mes);
+      if (!anio || !mes || mes < 1 || mes > 12) return json(res, 400, { error: "Año y mes (1-12) son obligatorios" });
+      db.prepare("INSERT INTO fin_metas (anio,mes,ingresos,gastos) VALUES (?,?,?,?) ON CONFLICT(anio,mes) DO UPDATE SET ingresos=excluded.ingresos, gastos=excluded.gastos")
+        .run(anio, mes, parseFloat(b.ingresos) || 0, parseFloat(b.gastos) || 0);
+      return json(res, 200, { ok: true });
+    }
+    // ---- Resumen anual para el panel (flujo de caja estilo plantilla) ----
+    if (ruta === "/api/fin/resumen" && req.method === "GET") {
+      const anio = parseInt(url.searchParams.get("anio")) || new Date().getFullYear();
+      const caja = url.searchParams.get("caja") || "";
+      let filas = caja
+        ? db.prepare("SELECT tipo,importe,fecha,categoria,caja_id FROM movimientos WHERE caja_id=?").all(caja)
+        : db.prepare("SELECT tipo,importe,fecha,categoria,caja_id FROM movimientos").all();
+      let saldo_inicial = 0;
+      const meses = Array.from({ length: 12 }, () => ({ ingresos: 0, gastos: 0 }));
+      const dias = {}; // "mes-dia" → {ingresos,gastos}
+      const cats = { INGRESO: {}, GASTO: {} };
+      const anios = new Set();
+      for (const m of filas) {
+        const f = String(m.fecha || "");
+        const a = parseInt(f.slice(0, 4)), mm = parseInt(f.slice(5, 7)), dd = parseInt(f.slice(8, 10));
+        if (!a || !mm) continue;
+        anios.add(a);
+        const signo = m.tipo === "INGRESO" ? 1 : -1;
+        if (a < anio) { saldo_inicial += signo * m.importe; continue; }
+        if (a > anio) continue;
+        const slot = meses[mm - 1];
+        if (m.tipo === "INGRESO") slot.ingresos += m.importe; else slot.gastos += m.importe;
+        const kd = mm + "-" + dd;
+        dias[kd] = dias[kd] || { ingresos: 0, gastos: 0 };
+        if (m.tipo === "INGRESO") dias[kd].ingresos += m.importe; else dias[kd].gastos += m.importe;
+        const cat = (m.categoria || "(sin categoría)");
+        cats[m.tipo === "INGRESO" ? "INGRESO" : "GASTO"][cat] = (cats[m.tipo === "INGRESO" ? "INGRESO" : "GASTO"][cat] || 0) + m.importe;
+      }
+      const metas = db.prepare("SELECT * FROM fin_metas WHERE anio=? ORDER BY mes").all(anio);
+      return json(res, 200, { anio, saldo_inicial, meses, dias, categorias: cats, metas, anios: [...anios].sort() });
     }
     const mMovImg = ruta.match(/^\/api\/fin\/movimiento\/([^/]+)\/imagen$/);
     if (mMovImg && req.method === "POST") {
@@ -800,9 +885,9 @@ const servidor = http.createServer(async (req, res) => {
       const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
       const m = db.prepare("SELECT * FROM movimientos WHERE id=?").get(mMovDel[1]);
       if (!m) return json(res, 404, { error: "Movimiento no encontrado" });
-      db.prepare("UPDATE movimientos SET caja_id=?, tipo=?, concepto=?, importe=?, fecha=? WHERE id=?")
+      db.prepare("UPDATE movimientos SET caja_id=?, tipo=?, concepto=?, importe=?, fecha=?, categoria=? WHERE id=?")
         .run(b.caja_id || m.caja_id, b.tipo === "INGRESO" ? "INGRESO" : "GASTO", b.concepto !== undefined ? b.concepto : m.concepto,
-          parseFloat(b.importe) > 0 ? parseFloat(b.importe) : m.importe, b.fecha || m.fecha, mMovDel[1]);
+          parseFloat(b.importe) > 0 ? parseFloat(b.importe) : m.importe, b.fecha || m.fecha, b.categoria !== undefined ? b.categoria : (m.categoria || ""), mMovDel[1]);
       return json(res, 200, { ok: true });
     }
     if (mMovDel && req.method === "DELETE") {
