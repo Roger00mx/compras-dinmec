@@ -101,7 +101,7 @@ async function instalarApp() {
 
 // --- Helpers de Compras SGC ---
 function dinero(n, moneda){ const v=parseFloat(n)||0; return "$"+v.toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2})+(moneda?(" "+moneda):""); }
-function fechaCorta(iso){ try{ if(!iso) return ""; return new Date(iso).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"}); }catch{ return ""; } }
+function fechaCorta(iso){ try{ if(!iso) return ""; if(/^\d{4}-\d{2}-\d{2}$/.test(iso)) iso+="T12:00:00"; return new Date(iso).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"}); }catch{ return ""; } }
 function hoyISO(){ return new Date().toISOString().slice(0,10); }
 function sumaDias(fechaISO, dias){ try{ const d=new Date(fechaISO+"T12:00:00"); d.setDate(d.getDate()+(parseInt(dias)||0)); return d.toISOString().slice(0,10);}catch{ return ""; } }
 
